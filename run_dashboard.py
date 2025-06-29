@@ -6,7 +6,10 @@ Launch Streamlit Dashboard for WhatsApp AI Assistant
 import subprocess
 import sys
 import os
-from config.settings import settings
+from dotenv import load_dotenv
+
+# Force reload environment variables
+load_dotenv(override=True)
 
 def main():
     """Launch the Streamlit dashboard"""
@@ -19,6 +22,9 @@ def main():
         print("❌ Streamlit not found. Please install requirements:")
         print("pip install -r requirements.txt")
         sys.exit(1)
+    
+    # Import settings after environment is loaded
+    from config.settings import settings
     
     # Launch streamlit
     cmd = [

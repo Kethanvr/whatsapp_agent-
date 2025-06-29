@@ -183,11 +183,18 @@ def show_send_ai_message():
     with st.spinner("Loading contacts..."):
         chats = whatsapp_client.get_chats()
     
-    # Create chat options
+    # Create chat options with names instead of IDs
     chat_options = {}
     if chats:
         for chat in chats:
-            chat_label = f"{'🏘️' if chat.is_group else '👤'} {chat.name}"
+            # Use contact name with appropriate icon
+            if chat.is_group:
+                chat_label = f"🏘️ {chat.name}"
+            else:
+                # For personal chats, show the contact name (not phone number)
+                contact_name = chat.name if chat.name and chat.name != chat.id else f"Contact {chat.id[-4:]}"
+                chat_label = f"👤 {contact_name}"
+            
             chat_options[chat_label] = chat.id
     
     # Main form
@@ -259,14 +266,15 @@ def show_send_ai_message():
         
         # Determine recipient
         recipient_id = None
+        recipient_name = None
         if manual_mode and manual_phone:
             # Use manual phone number
             recipient_id = manual_phone.strip()
-            recipient_name = manual_phone
+            recipient_name = f"📱 {manual_phone}"
         elif not manual_mode and selected_chat and chat_options:
             # Use selected chat
             recipient_id = chat_options[selected_chat]
-            recipient_name = selected_chat
+            recipient_name = selected_chat  # This already contains the formatted name with icon
         else:
             st.error("❌ Please select a recipient or enter a phone number!")
             return
@@ -471,11 +479,13 @@ def show_logs():
         if chats:
             chat_data = []
             for chat in chats:
+                # Show readable name instead of just ID
+                display_name = chat.name if chat.name and chat.name != chat.id else f"Contact {chat.id[-4:]}"
                 chat_data.append({
-                    "ID": chat.id,
-                    "Name": chat.name,
-                    "Type": "Group" if chat.is_group else "Personal",
-                    "Participants": chat.participant_count or "N/A"
+                    "Name": display_name,
+                    "Type": "Group" if chat.is_group else "Personal", 
+                    "Participants": chat.participant_count or "N/A",
+                    "ID": chat.id[:15] + "..." if len(chat.id) > 15 else chat.id  # Shortened ID for reference
                 })
             
             st.dataframe(pd.DataFrame(chat_data))
