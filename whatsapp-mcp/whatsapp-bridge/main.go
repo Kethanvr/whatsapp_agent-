@@ -1035,8 +1035,8 @@ func main() {
 
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
-	// Start REST API server (changed port to 3333 to match our AI assistant)
-	startRESTServer(client, messageStore, 3333)
+	// Start REST API server (changed port to 3334 to avoid conflicts)
+	startRESTServer(client, messageStore, 3334)
 
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)

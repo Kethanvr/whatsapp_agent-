@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(..., env="GEMINI_API_KEY")
     
     # WhatsApp MCP Configuration
-    mcp_server_url: str = Field(default="http://localhost:3333", env="MCP_SERVER_URL")
+    mcp_server_url: str = Field(default="http://localhost:3334", env="MCP_SERVER_URL")
     mcp_poll_interval: int = Field(default=3, env="MCP_POLL_INTERVAL")
     
     # Bot Behavior
