@@ -68,7 +68,7 @@ def main():
         st_autorefresh(interval=5000, limit=None, key="main_refresh")
     
     # Main content tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Overview", "💬 Recent Messages", "🧪 Test Agent", "📋 Logs"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Overview", "💬 Recent Messages", "🚀 Send AI Message", "🧪 Test Agent", "📋 Logs"])
     
     with tab1:
         show_overview()
@@ -77,9 +77,12 @@ def main():
         show_recent_messages()
     
     with tab3:
-        show_test_interface()
+        show_send_ai_message()
     
     with tab4:
+        show_test_interface()
+    
+    with tab5:
         show_logs()
 
 def show_overview():
@@ -166,6 +169,179 @@ def show_recent_messages():
                 st.text(f"Status: {status}")
             
             st.markdown("---")
+
+def show_send_ai_message():
+    """Send AI-generated messages to WhatsApp contacts"""
+    st.header("🚀 Send AI Message to WhatsApp")
+    
+    st.markdown("""
+    Enter a prompt for the AI and send the response directly to any WhatsApp contact or group.
+    Perfect for getting AI insights and sharing them instantly!
+    """)
+    
+    # Get available chats for dropdown
+    with st.spinner("Loading contacts..."):
+        chats = whatsapp_client.get_chats()
+    
+    # Create chat options
+    chat_options = {}
+    if chats:
+        for chat in chats:
+            chat_label = f"{'🏘️' if chat.is_group else '👤'} {chat.name}"
+            chat_options[chat_label] = chat.id
+    
+    # Main form
+    with st.form("send_ai_message_form"):
+        st.subheader("💭 AI Message Setup")
+        
+        # AI Prompt input
+        default_prompt = ""
+        if hasattr(st.session_state, 'quick_prompt'):
+            default_prompt = st.session_state.quick_prompt
+            delattr(st.session_state, 'quick_prompt')
+        
+        ai_prompt = st.text_area(
+            "🤖 Enter your prompt for the AI:",
+            value=default_prompt,
+            placeholder="Example: What is artificial intelligence and how does it work?",
+            height=120,
+            help="Ask the AI anything - science, tech, math, creative writing, advice, etc."
+        )
+        
+        # Recipient selection
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            if chat_options:
+                selected_chat = st.selectbox(
+                    "📱 Choose recipient:",
+                    options=list(chat_options.keys()),
+                    help="Select from your WhatsApp contacts and groups"
+                )
+            else:
+                st.warning("⚠️ No chats available. Make sure WhatsApp bridge is connected.")
+                selected_chat = None
+        
+        with col2:
+            # Option for manual phone number entry
+            manual_mode = st.checkbox("📝 Manual phone", help="Enter phone number manually")
+        
+        # Manual phone number input (if enabled)
+        manual_phone = None
+        if manual_mode:
+            manual_phone = st.text_input(
+                "📞 Phone number:",
+                placeholder="+1234567890",
+                help="Include country code (e.g., +1234567890)"
+            )
+        
+        # Preview section
+        st.subheader("👁️ Preview")
+        if ai_prompt:
+            with st.expander("📝 AI will process this prompt:", expanded=True):
+                st.write(ai_prompt)
+        
+        # Send button
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            send_button = st.form_submit_button(
+                "🚀 Generate & Send",
+                type="primary",
+                use_container_width=True
+            )
+    
+    # Process the form submission
+    if send_button:
+        # Validation
+        if not ai_prompt.strip():
+            st.error("❌ Please enter a prompt for the AI!")
+            return
+        
+        # Determine recipient
+        recipient_id = None
+        if manual_mode and manual_phone:
+            # Use manual phone number
+            recipient_id = manual_phone.strip()
+            recipient_name = manual_phone
+        elif not manual_mode and selected_chat and chat_options:
+            # Use selected chat
+            recipient_id = chat_options[selected_chat]
+            recipient_name = selected_chat
+        else:
+            st.error("❌ Please select a recipient or enter a phone number!")
+            return
+        
+        # Process the AI request
+        st.subheader("🔄 Processing...")
+        
+        # Step 1: Generate AI response
+        with st.spinner("🤖 AI is thinking..."):
+            start_time = time.time()
+            try:
+                ai_response = ai_agent.get_simple_response(ai_prompt)
+                ai_time = time.time() - start_time
+                
+                if not ai_response:
+                    st.error("❌ AI failed to generate a response. Please try again.")
+                    return
+                
+                st.success(f"✅ AI response generated in {ai_time:.2f}s")
+                
+            except Exception as e:
+                st.error(f"❌ AI Error: {str(e)}")
+                return
+        
+        # Show AI response
+        with st.expander("🤖 AI Response Preview", expanded=True):
+            st.info(ai_response)
+        
+        # Step 2: Send to WhatsApp
+        with st.spinner("📱 Sending to WhatsApp..."):
+            send_start = time.time()
+            try:
+                success = whatsapp_client.send_message(recipient_id, ai_response)
+                send_time = time.time() - send_start
+                
+                if success:
+                    st.success(f"✅ Message sent successfully in {send_time:.2f}s!")
+                    
+                    # Show summary
+                    st.subheader("📊 Delivery Summary")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("👤 Recipient", recipient_name)
+                    with col2:
+                        st.metric("⏱️ AI Time", f"{ai_time:.2f}s")
+                    with col3:
+                        st.metric("📤 Send Time", f"{send_time:.2f}s")
+                    
+                    # Success message with action suggestion
+                    st.info("💡 **Tip:** Check your WhatsApp to see the message delivered!")
+                    
+                else:
+                    st.error("❌ Failed to send message to WhatsApp. Please check your connection.")
+                    
+            except Exception as e:
+                st.error(f"❌ WhatsApp Send Error: {str(e)}")
+    
+    # Quick action examples
+    st.markdown("---")
+    st.subheader("💡 Quick Examples")
+    
+    example_col1, example_col2, example_col3 = st.columns(3)
+    
+    with example_col1:
+        if st.button("🧠 Explain AI", key="example_ai"):
+            st.session_state.quick_prompt = "Explain artificial intelligence in simple terms that anyone can understand"
+    
+    with example_col2:
+        if st.button("🌍 Fun Fact", key="example_fact"):
+            st.session_state.quick_prompt = "Share an interesting scientific fact about space or the ocean"
+    
+    with example_col3:
+        if st.button("💡 Daily Tip", key="example_tip"):
+            st.session_state.quick_prompt = "Give me a useful productivity tip for today"
 
 def show_test_interface():
     """Show AI agent testing interface"""
