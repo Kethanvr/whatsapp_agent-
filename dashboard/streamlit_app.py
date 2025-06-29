@@ -174,23 +174,38 @@ def show_send_ai_message():
     Perfect for getting AI insights and sharing them instantly!
     """)
     
-    # Get available chats for dropdown
-    with st.spinner("Loading contacts..."):
-        chats = whatsapp_client.get_chats()
+    # Load contacts with recent recipients prioritized
+    col1, col2 = st.columns([1, 1])
     
-    # Create chat options with names instead of IDs
-    chat_options = {}
-    if chats:
-        for chat in chats:
-            # Use contact name with appropriate icon
-            if chat.is_group:
-                chat_label = f"🏘️ {chat.name}"
-            else:
-                # For personal chats, show the contact name (not phone number)
-                contact_name = chat.name if chat.name and chat.name != chat.id else f"Contact {chat.id[-4:]}"
-                chat_label = f"👤 {contact_name}"
-            
-            chat_options[chat_label] = chat.id
+    with col1:
+        st.subheader("👥 Recent Contacts")
+        with st.spinner("Loading recent contacts..."):
+            recent_chats = whatsapp_client.get_recent_recipients(limit=10)
+        
+        recent_options = {}
+        if recent_chats:
+            for chat in recent_chats:
+                recent_options[chat.name] = chat.id
+    
+    with col2:
+        st.subheader("📋 All Contacts")
+        with st.spinner("Loading all contacts..."):
+            all_chats = whatsapp_client.get_chats()
+        
+        all_options = {}
+        if all_chats:
+            for chat in all_chats:
+                # Better contact name resolution
+                if chat.is_group:
+                    chat_label = f"👥 {chat.name}"
+                else:
+                    phone = chat.id.split('@')[0]
+                    if chat.name and not chat.name.isdigit() and chat.name != phone:
+                        chat_label = f"👤 {chat.name} ({phone[-4:]})"
+                    else:
+                        chat_label = f"📞 {phone}"
+                
+                all_options[chat_label] = chat.id
     
     # Main form
     with st.form("send_ai_message_form"):
@@ -210,40 +225,64 @@ def show_send_ai_message():
             help="Ask the AI anything - science, tech, math, creative writing, advice, etc."
         )
         
-        # Recipient selection
-        col1, col2 = st.columns([3, 1])
+        # Recipient selection with tabs for recent vs all contacts
+        st.subheader("📱 Select Recipient")
         
-        with col1:
-            if chat_options:
-                # Ensure we have a default selection
-                chat_keys = list(chat_options.keys())
-                selected_chat = st.selectbox(
-                    "📱 Choose recipient:",
-                    options=chat_keys,
-                    index=0,  # Default to first contact
-                    help="Select from your WhatsApp contacts and groups"
+        contact_tab1, contact_tab2, contact_tab3 = st.tabs(["🕒 Recent", "📋 All Contacts", "📝 Manual"])
+        
+        selected_chat = None
+        selected_id = None
+        
+        with contact_tab1:
+            if recent_options:
+                recent_keys = list(recent_options.keys())
+                selected_recent = st.selectbox(
+                    "Choose from recent conversations:",
+                    options=recent_keys,
+                    index=0,
+                    help="Contacts you've messaged recently",
+                    key="recent_select"
                 )
-                
-                # Show selected contact info
-                if selected_chat:
-                    selected_id = chat_options[selected_chat]
-                    st.caption(f"Selected: {selected_chat} → {selected_id}")
+                if selected_recent:
+                    selected_chat = selected_recent
+                    selected_id = recent_options[selected_recent]
             else:
-                st.warning("⚠️ No chats available. Make sure WhatsApp bridge is connected.")
-                selected_chat = None
+                st.info("📭 No recent conversations found")
         
-        with col2:
-            # Option for manual phone number entry
-            manual_mode = st.checkbox("📝 Manual phone", help="Enter phone number manually")
+        with contact_tab2:
+            if all_options:
+                all_keys = list(all_options.keys())
+                selected_all = st.selectbox(
+                    "Choose from all contacts:",
+                    options=all_keys,
+                    index=0,
+                    help="All available WhatsApp contacts and groups",
+                    key="all_select"
+                )
+                if selected_all:
+                    selected_chat = selected_all
+                    selected_id = all_options[selected_all]
+            else:
+                st.warning("⚠️ No contacts available. Make sure WhatsApp bridge is connected.")
         
-        # Manual phone number input (if enabled)
-        manual_phone = None
-        if manual_mode:
+        with contact_tab3:
             manual_phone = st.text_input(
                 "📞 Phone number:",
-                placeholder="+1234567890",
-                help="Include country code (e.g., +1234567890)"
+                placeholder="+919876543210 or 919876543210@s.whatsapp.net",
+                help="Enter phone number with country code"
             )
+            if manual_phone:
+                if '@' not in manual_phone:
+                    # Auto-format phone number
+                    clean_phone = manual_phone.replace('+', '').replace('-', '').replace(' ', '')
+                    manual_phone = f"{clean_phone}@s.whatsapp.net"
+                selected_chat = f"📱 Manual: {manual_phone}"
+                selected_id = manual_phone
+        
+        # Show selection preview
+        if selected_chat and selected_id:
+            st.success(f"✅ **Selected:** {selected_chat}")
+            st.caption(f"📱 **WhatsApp ID:** {selected_id}")
         
         # Preview section
         st.subheader("👁️ Preview")
@@ -267,26 +306,19 @@ def show_send_ai_message():
             st.error("❌ Please enter a prompt for the AI!")
             return
         
-        # Determine recipient
-        recipient_id = None
-        recipient_name = None
-        if manual_mode and manual_phone:
-            # Use manual phone number
-            recipient_id = manual_phone.strip()
-            recipient_name = f"📱 {manual_phone}"
-        elif not manual_mode and selected_chat and chat_options:
-            # Use selected chat
-            recipient_id = chat_options[selected_chat]
-            recipient_name = selected_chat  # This already contains the formatted name with icon
-        else:
-            st.error("❌ Please select a recipient or enter a phone number!")
+        # Validate recipient selection
+        if not selected_chat or not selected_id:
+            st.error("❌ Please select a recipient from one of the tabs above!")
             return
+        
+        recipient_id = selected_id
+        recipient_name = selected_chat
         
         # Debug info to show what recipient is selected
         st.info(f"🎯 **Selected Recipient:** {recipient_name}")
         st.info(f"📱 **Recipient ID:** {recipient_id}")
-        st.info(f"🔧 **Manual Mode:** {manual_mode}")
-        st.info(f"📋 **Available Options:** {len(chat_options) if chat_options else 0} contacts")
+        st.info(f"📋 **Recent Contacts:** {len(recent_options) if recent_options else 0}")
+        st.info(f"📋 **All Contacts:** {len(all_options) if all_options else 0}")
         
         # Process the AI request
         st.subheader("🔄 Processing...")

@@ -52,9 +52,18 @@ class WhatsAppMCPClient:
             
             chats = []
             for chat_data in response.json():
+                # Better contact name resolution
+                name = chat_data.get("name", "Unknown")
+                chat_id = chat_data["id"]
+                
+                # If name is just a phone number, try to get a better name
+                if name.isdigit() or name == chat_id.split('@')[0]:
+                    # Try to extract a proper name from recent messages
+                    name = self._get_better_contact_name(chat_id) or f"Contact {name[-4:]}"
+                
                 chats.append(ChatInfo(
-                    id=chat_data["id"],
-                    name=chat_data.get("name", "Unknown"),
+                    id=chat_id,
+                    name=name,
                     is_group=chat_data.get("isGroup", False),
                     participant_count=chat_data.get("participantCount")
                 ))
@@ -62,6 +71,70 @@ class WhatsAppMCPClient:
             
         except Exception as e:
             logger.error(f"Failed to get chats: {e}")
+            return []
+    
+    def _get_better_contact_name(self, chat_id: str) -> Optional[str]:
+        """Try to get a better contact name from recent messages"""
+        try:
+            # Get recent messages to see if we can find a better name
+            messages = self.get_messages(chat_id, limit=5)
+            for message in messages:
+                if not message.is_from_me and message.sender:
+                    # Extract potential name from sender field
+                    sender = message.sender
+                    if sender and not sender.isdigit() and len(sender) > 5:
+                        return sender
+            return None
+        except:
+            return None
+    
+    def get_recent_recipients(self, limit: int = 10) -> List[ChatInfo]:
+        """Get recent message recipients for easier contact selection"""
+        try:
+            response = self.session.get(f"{self.base_url}/chats")
+            response.raise_for_status()
+            
+            # Sort chats by last message time and filter for recent activity
+            chat_list = response.json()
+            
+            # Sort by lastMessageTime (most recent first)
+            sorted_chats = sorted(
+                chat_list, 
+                key=lambda x: x.get("lastMessageTime", ""), 
+                reverse=True
+            )
+            
+            recent_chats = []
+            for chat_data in sorted_chats[:limit]:
+                name = chat_data.get("name", "Unknown")
+                chat_id = chat_data["id"]
+                
+                # Better contact name resolution
+                if name.isdigit() or name == chat_id.split('@')[0]:
+                    name = self._get_better_contact_name(chat_id) or f"Contact {name[-4:]}"
+                
+                # Add emoji indicators for contact type
+                if chat_data.get("isGroup", False):
+                    display_name = f"👥 {name}"
+                else:
+                    # Show phone number for reference
+                    phone = chat_id.split('@')[0]
+                    if name != phone and not name.startswith("Contact"):
+                        display_name = f"👤 {name} ({phone[-4:]})"
+                    else:
+                        display_name = f"📞 {phone}"
+                
+                recent_chats.append(ChatInfo(
+                    id=chat_id,
+                    name=display_name,
+                    is_group=chat_data.get("isGroup", False),
+                    participant_count=chat_data.get("participantCount")
+                ))
+            
+            return recent_chats
+            
+        except Exception as e:
+            logger.error(f"Failed to get recent recipients: {e}")
             return []
     
     def get_messages(self, chat_id: str, limit: int = 10) -> List[Message]:
