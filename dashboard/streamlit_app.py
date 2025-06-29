@@ -6,7 +6,7 @@ import time
 import requests
 from datetime import datetime, timedelta
 import pandas as pd
-from streamlit_autorefresh import st_autorefresh
+# from streamlit_autorefresh import st_autorefresh  # Removed for better UX
 
 # Import core modules
 import sys
@@ -59,13 +59,8 @@ def main():
         st.text(f"Poll Interval: {settings.mcp_poll_interval}s")
         st.text(f"Triggers: {', '.join(settings.trigger_list)}")
         
-        # Auto-refresh toggle
+        # Auto-refresh toggle removed for better UX
         st.markdown("---")
-        auto_refresh = st.checkbox("🔄 Auto-refresh (5s)", value=True)
-        
-    # Auto-refresh
-    if auto_refresh:
-        st_autorefresh(interval=5000, limit=None, key="main_refresh")
     
     # Main content tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Overview", "💬 Recent Messages", "🚀 Send AI Message", "🧪 Test Agent", "📋 Logs"])
@@ -220,11 +215,19 @@ def show_send_ai_message():
         
         with col1:
             if chat_options:
+                # Ensure we have a default selection
+                chat_keys = list(chat_options.keys())
                 selected_chat = st.selectbox(
                     "📱 Choose recipient:",
-                    options=list(chat_options.keys()),
+                    options=chat_keys,
+                    index=0,  # Default to first contact
                     help="Select from your WhatsApp contacts and groups"
                 )
+                
+                # Show selected contact info
+                if selected_chat:
+                    selected_id = chat_options[selected_chat]
+                    st.caption(f"Selected: {selected_chat} → {selected_id}")
             else:
                 st.warning("⚠️ No chats available. Make sure WhatsApp bridge is connected.")
                 selected_chat = None
@@ -278,6 +281,12 @@ def show_send_ai_message():
         else:
             st.error("❌ Please select a recipient or enter a phone number!")
             return
+        
+        # Debug info to show what recipient is selected
+        st.info(f"🎯 **Selected Recipient:** {recipient_name}")
+        st.info(f"📱 **Recipient ID:** {recipient_id}")
+        st.info(f"🔧 **Manual Mode:** {manual_mode}")
+        st.info(f"📋 **Available Options:** {len(chat_options) if chat_options else 0} contacts")
         
         # Process the AI request
         st.subheader("🔄 Processing...")
