@@ -60,11 +60,11 @@ class WhatsAppMCPClient:
             response = self.session.get(f"{self.base_url}/chats", timeout=3)
             if response.status_code == 200:
                 chats = response.json()
-                if isinstance(chats, list) and len(chats) > 0:
-                    # Successfully got chats, WhatsApp is connected
+                if isinstance(chats, list):
+                    # If we receive a list (even empty) from /chats endpoint, the bridge is up
                     return {
-                        "connected": True, 
-                        "message": "Connected via chats endpoint",
+                        "connected": True,
+                        "message": f"Connected – {len(chats)} chat(s) available",
                         "chat_count": len(chats)
                     }
                 else:
@@ -248,6 +248,8 @@ class WhatsAppMCPClient:
             else:
                 error_msg = result.get("message", "Unknown error")
                 logger.error(f"Message sending failed: {error_msg}")
+                return False
+                logger.error(f"Failed to send message to chat {chat_id}: {e}")
                 return False
             
         except Exception as e:

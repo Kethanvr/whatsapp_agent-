@@ -352,8 +352,8 @@ def show_overview():
                 st.metric("Total Chats", len(chats))
             else:
                 st.metric("Total Chats", "0", help="Connect WhatsApp to see chats")
-        except:
-            st.metric("Total Chats", "Error")
+        except Exception as e:         
+            st.metric("Total Chats", "Error", e)
     
     with col2:
         try:
@@ -362,8 +362,8 @@ def show_overview():
                 st.metric("Personal Chats", len(personal_chats))
             else:
                 st.metric("Personal Chats", "0", help="Connect WhatsApp to see chats")
-        except:
-            st.metric("Personal Chats", "Error")
+        except Exception as e:
+            st.metric("Personal Chats", "Error", e)
     
     with col3:
         try:
@@ -372,8 +372,8 @@ def show_overview():
                 st.metric("Group Chats", len(group_chats))
             else:
                 st.metric("Group Chats", "0", help="Connect WhatsApp to see chats")
-        except:
-            st.metric("Group Chats", "Error")
+        except Exception as e:
+            st.metric("Group Chats", "Error", e)
     
     with col4:
         bridge_status_text = "🟢 Online" if bridge_healthy else "🔴 Offline"
@@ -958,7 +958,7 @@ def process_traditional_send(ai_prompt, selected_chat, selected_id, recent_optio
                 return
             
             st.success(f"✅ AI response generated in {ai_time:.2f}s")
-            
+
         except Exception as e:
             st.error(f"❌ AI Error: {str(e)}")
             return
