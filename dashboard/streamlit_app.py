@@ -582,26 +582,16 @@ def show_traditional_send_message():
             help="Ask the AI anything - science, tech, math, creative writing, advice, etc."
         )
         
-        # Show helpful examples if no input
+        # Show helpful examples if no input (but NO buttons inside form)
         if not ai_prompt.strip():
-            st.info("💡 **Need inspiration? Try these examples:**")
-            
-            example_col1, example_col2, example_col3 = st.columns(3)
-            
-            with example_col1:
-                if st.button("🧠 Explain AI", key="quick_ai_explain"):
-                    st.session_state.quick_prompt = "Explain artificial intelligence in simple terms that anyone can understand"
-                    st.rerun()
-            
-            with example_col2:
-                if st.button("🌍 Fun Fact", key="quick_fun_fact"):
-                    st.session_state.quick_prompt = "Share an interesting scientific fact about space or the ocean"
-                    st.rerun()
-            
-            with example_col3:
-                if st.button("💡 Daily Tip", key="quick_daily_tip"):
-                    st.session_state.quick_prompt = "Give me a useful productivity tip for today"
-                    st.rerun()
+            st.info("💡 **Example prompts to try:**")
+            st.markdown("""
+            - "Explain artificial intelligence in simple terms"
+            - "Share an interesting scientific fact about space"
+            - "Give me a useful productivity tip for today"
+            - "What is machine learning and how does it work?"
+            """)
+            st.caption("👆 Copy and paste any of these examples above")
         
         # Recipient selection with tabs for recent vs all contacts
         st.subheader("📱 Select Recipient")
@@ -1007,23 +997,9 @@ def process_traditional_send(ai_prompt, selected_chat, selected_id, recent_optio
         except Exception as e:
             st.error(f"❌ WhatsApp Send Error: {str(e)}")
     
-    # Quick action examples (for both tabs)
+    # Show completion message
     st.markdown("---")
-    st.subheader("💡 Quick Examples")
-    
-    example_col1, example_col2, example_col3 = st.columns(3)
-    
-    with example_col1:
-        if st.button("🧠 Explain AI", key="example_ai"):
-            st.session_state.quick_prompt = "Explain artificial intelligence in simple terms that anyone can understand"
-    
-    with example_col2:
-        if st.button("🌍 Fun Fact", key="example_fact"):
-            st.session_state.quick_prompt = "Share an interesting scientific fact about space or the ocean"
-    
-    with example_col3:
-        if st.button("💡 Daily Tip", key="example_tip"):
-            st.session_state.quick_prompt = "Give me a useful productivity tip for today"
+    st.info("✅ **Message sent successfully!** You can send another message using the form above.")
 
 def show_test_interface():
     """Show AI agent testing interface"""

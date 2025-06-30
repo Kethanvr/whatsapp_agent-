@@ -225,19 +225,30 @@ class WhatsAppMCPClient:
     def send_message(self, chat_id: str, text: str) -> bool:
         """Send a text message to a chat"""
         try:
+            # Use the correct API endpoint that matches the Go bridge
             payload = {
-                "chat_id": chat_id,
-                "message": text
+                "recipient": chat_id,  # Go bridge expects "recipient"
+                "message": text        # Go bridge expects "message"
             }
             
+            # Use the /api/send endpoint (not /send_message)
             response = self.session.post(
-                f"{self.base_url}/send_message",
+                f"{self.base_url}/api/send",
                 json=payload
             )
             response.raise_for_status()
             
-            logger.info(f"Message sent to chat {chat_id}: {text[:50]}...")
-            return True
+            # Check response for success
+            result = response.json()
+            success = result.get("success", False)
+            
+            if success:
+                logger.info(f"Message sent successfully to {chat_id}: {text[:50]}...")
+                return True
+            else:
+                error_msg = result.get("message", "Unknown error")
+                logger.error(f"Message sending failed: {error_msg}")
+                return False
             
         except Exception as e:
             logger.error(f"Failed to send message to chat {chat_id}: {e}")

@@ -39,6 +39,19 @@
 - **Files Changed**: `dashboard/streamlit_app.py`
 - **Added**: `quick_test_send.py` for testing message functionality
 
+### 7. **Fixed Streamlit Form Errors** ✅
+
+- **Issue**: `st.button()` inside `st.form()` causing StreamlitAPIException
+- **Fix**: Removed nested buttons, simplified form structure, better error handling
+- **Files Changed**: `dashboard/streamlit_app.py`
+- **Added**: `dashboard/simple_send.py` - Simple MVP interface
+
+### 8. **Fixed Message Sending API** ✅
+
+- **Issue**: Wrong API endpoint and payload format causing message send failures
+- **Fix**: Updated to use correct `/api/send` endpoint with `recipient` field instead of `chat_id`
+- **Files Changed**: `core/whatsapp_client.py`
+
 ## Testing Your Setup
 
 ### Step 1: Start the WhatsApp Bridge
@@ -330,6 +343,28 @@ This will verify:
 - Contact retrieval ✅
 - AI agent working ✅
 - Message sending capability ✅
+
+### 🚀 **Two Dashboard Options:**
+
+#### **Option 1: Simple MVP Dashboard (Recommended)**
+
+```bash
+streamlit run dashboard/simple_send.py --server.port 8502
+```
+
+- **URL:** http://localhost:8502
+- **Features:** Simple form, no errors, just works
+- **Best for:** Quick message sending without complexity
+
+#### **Option 2: Full Dashboard (Advanced)**
+
+```bash
+python run_dashboard.py
+```
+
+- **URL:** http://localhost:8501
+- **Features:** Multiple tabs, logs, connection help
+- **Best for:** Full functionality and monitoring
 
 ## Next Steps
 
