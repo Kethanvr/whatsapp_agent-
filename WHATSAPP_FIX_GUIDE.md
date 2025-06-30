@@ -26,6 +26,19 @@
 - **Fix**: Added cache clearing, auto-refresh, and better connection handling
 - **Files Changed**: `dashboard/streamlit_app.py`
 
+### 5. **Fixed Connection Detection** ✅
+
+- **Issue**: Dashboard showing "WhatsApp Not Connected" even when connected
+- **Fix**: Updated connection detection to use `/chats` endpoint as fallback when `/status` is not available
+- **Files Changed**: `core/whatsapp_client.py`
+
+### 6. **Enhanced Message Sending Interface** ✅
+
+- **Issue**: Unclear validation errors, confusing recipient selection, no guidance for users
+- **Fix**: Added better validation, example prompts, group/individual contact distinction, clearer error messages
+- **Files Changed**: `dashboard/streamlit_app.py`
+- **Added**: `quick_test_send.py` for testing message functionality
+
 ## Testing Your Setup
 
 ### Step 1: Start the WhatsApp Bridge
@@ -283,16 +296,40 @@ ENABLE_PERSONAL_CHATS=true
 
 4. **Send AI Message**:
    - Go to "Send AI Message" tab
-   - Select recipient from contacts
-   - Enter AI prompt: "What is machine learning?"
+   - **⚠️ MUST fill in AI prompt**: Enter something like "What is machine learning?" in the text area
+   - **Select recipient**: Choose from Recent, All Contacts, or Manual tab
+   - **Note contact type**: Groups show 👥, individuals show 👤
    - Click "Generate & Send"
    - AI processes prompt and sends response to WhatsApp
+
+### 🚨 **Common Mistakes Fixed:**
+
+1. **❌ Empty AI Prompt**: Dashboard now shows error if text area is empty
+2. **❌ No Recipient Selected**: Clear validation messages if no one is chosen
+3. **❌ Connection Status**: Dashboard now correctly detects WhatsApp connection
+4. **❌ Group vs Individual**: Interface now clearly shows contact type
 
 ### Message Flow:
 
 ```
 Dashboard → AI Agent → Generate Response → WhatsApp Bridge → Recipient
 ```
+
+### 🧪 **Testing Your Setup:**
+
+Run the quick test script:
+
+```bash
+python quick_test_send.py
+```
+
+This will verify:
+
+- Bridge connection ✅
+- WhatsApp connection ✅
+- Contact retrieval ✅
+- AI agent working ✅
+- Message sending capability ✅
 
 ## Next Steps
 

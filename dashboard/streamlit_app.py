@@ -582,6 +582,27 @@ def show_traditional_send_message():
             help="Ask the AI anything - science, tech, math, creative writing, advice, etc."
         )
         
+        # Show helpful examples if no input
+        if not ai_prompt.strip():
+            st.info("💡 **Need inspiration? Try these examples:**")
+            
+            example_col1, example_col2, example_col3 = st.columns(3)
+            
+            with example_col1:
+                if st.button("🧠 Explain AI", key="quick_ai_explain"):
+                    st.session_state.quick_prompt = "Explain artificial intelligence in simple terms that anyone can understand"
+                    st.rerun()
+            
+            with example_col2:
+                if st.button("🌍 Fun Fact", key="quick_fun_fact"):
+                    st.session_state.quick_prompt = "Share an interesting scientific fact about space or the ocean"
+                    st.rerun()
+            
+            with example_col3:
+                if st.button("💡 Daily Tip", key="quick_daily_tip"):
+                    st.session_state.quick_prompt = "Give me a useful productivity tip for today"
+                    st.rerun()
+        
         # Recipient selection with tabs for recent vs all contacts
         st.subheader("📱 Select Recipient")
         
@@ -638,8 +659,19 @@ def show_traditional_send_message():
         
         # Show selection preview
         if selected_chat and selected_id:
+            is_group = selected_id.endswith('@g.us')
+            contact_type = "👥 WhatsApp Group" if is_group else "👤 Individual Contact"
+            
             st.success(f"✅ **Selected:** {selected_chat}")
-            st.caption(f"📱 **WhatsApp ID:** {selected_id}")
+            
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.caption(f"📱 **WhatsApp ID:** {selected_id}")
+            with col2:
+                if is_group:
+                    st.warning(f"{contact_type}")
+                else:
+                    st.info(f"{contact_type}")
         
         # Preview section
         st.subheader("👁️ Preview")
@@ -658,6 +690,17 @@ def show_traditional_send_message():
     
     # Process the form submission
     if send_button:
+        # Better validation with specific error messages
+        if not ai_prompt.strip():
+            st.error("❌ **AI Prompt is required!** Please enter what you want the AI to respond about.")
+            st.info("💡 **Example:** 'What is artificial intelligence and how does it work?'")
+            return
+        
+        if not selected_chat or not selected_id:
+            st.error("❌ **Recipient is required!** Please select a contact from one of the tabs above.")
+            st.info("💡 **Tip:** Use the Recent, All Contacts, or Manual tab to choose someone")
+            return
+        
         process_traditional_send(ai_prompt, selected_chat, selected_id, recent_options, all_options)
 
 def show_mention_based_messaging():
@@ -885,24 +928,30 @@ def show_send_confirmation(contact, message, mentioned_name):
 
 def process_traditional_send(ai_prompt, selected_chat, selected_id, recent_options, all_options):
     """Process traditional send form submission"""
-    # Validation
-    if not ai_prompt.strip():
-        st.error("❌ Please enter a prompt for the AI!")
-        return
-    
-    # Validate recipient selection
-    if not selected_chat or not selected_id:
-        st.error("❌ Please select a recipient from one of the tabs above!")
-        return
     
     recipient_id = selected_id
     recipient_name = selected_chat
     
-    # Debug info to show what recipient is selected
-    st.info(f"🎯 **Selected Recipient:** {recipient_name}")
-    st.info(f"📱 **Recipient ID:** {recipient_id}")
-    st.info(f"📋 **Recent Contacts:** {len(recent_options) if recent_options else 0}")
-    st.info(f"📋 **All Contacts:** {len(all_options) if all_options else 0}")
+    # Determine if this is a group or individual
+    is_group = recipient_id.endswith('@g.us')
+    recipient_type = "WhatsApp Group" if is_group else "Individual Contact"
+    
+    # Show what's being sent
+    st.subheader("📤 Sending Message")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.success(f"🎯 **To:** {recipient_name}")
+        st.info(f"📱 **Type:** {recipient_type}")
+        st.caption(f"**ID:** {recipient_id}")
+    
+    with col2:
+        if is_group:
+            st.warning("👥 **Group Message**")
+            st.caption("Message will be sent to group chat")
+        else:
+            st.success("👤 **Personal Message**")
+            st.caption("Message will be sent privately")
     
     # Process the AI request
     st.subheader("🔄 Processing...")

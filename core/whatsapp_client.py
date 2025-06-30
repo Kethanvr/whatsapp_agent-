@@ -48,12 +48,30 @@ class WhatsAppMCPClient:
     def connection_status(self) -> dict:
         """Get detailed connection status including WhatsApp connection"""
         try:
+            # First try the status endpoint
             response = self.session.get(f"{self.base_url}/status")
             if response.status_code == 200:
                 return response.json()
+        except:
+            pass
+        
+        # Fallback: Check if we can get chats (means WhatsApp is connected)
+        try:
+            response = self.session.get(f"{self.base_url}/chats", timeout=3)
+            if response.status_code == 200:
+                chats = response.json()
+                if isinstance(chats, list) and len(chats) > 0:
+                    # Successfully got chats, WhatsApp is connected
+                    return {
+                        "connected": True, 
+                        "message": "Connected via chats endpoint",
+                        "chat_count": len(chats)
+                    }
+                else:
+                    # Empty response, might be disconnected
+                    return {"connected": False, "message": "No chats available - WhatsApp may be disconnected"}
             else:
-                # Fallback for older bridge versions
-                return {"connected": False, "message": "Status endpoint not available"}
+                return {"connected": False, "message": f"Bridge returned {response.status_code}"}
         except Exception as e:
             logger.error(f"Failed to get connection status: {e}")
             return {"connected": False, "message": str(e)}
