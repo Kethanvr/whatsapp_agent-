@@ -541,7 +541,16 @@ def show_traditional_send_message():
         recent_options = {}
         if recent_chats:
             for chat in recent_chats:
-                recent_options[chat.name] = chat.id
+                phone = chat.id.split('@')[0]
+                if chat.is_group:
+                    label = f"👥 {chat.name} ({phone[-4:]}) | {phone}"
+                else:
+                    if chat.name and not chat.name.isdigit() and chat.name != phone:
+                        label = f"👤 {chat.name} ({phone[-4:]}) | {phone}"
+                    else:
+                        label = f"📞 {phone}"
+
+                recent_options[label] = chat.id
     
     with col2:
         st.subheader("📋 All Contacts")
@@ -552,13 +561,12 @@ def show_traditional_send_message():
         all_options = {}
         if all_chats:
             for chat in all_chats:
-                # Better contact name resolution
+                phone = chat.id.split('@')[0]
                 if chat.is_group:
-                    chat_label = f"👥 {chat.name}"
+                    chat_label = f"👥 {chat.name} ({phone[-4:]}) | {phone}"
                 else:
-                    phone = chat.id.split('@')[0]
                     if chat.name and not chat.name.isdigit() and chat.name != phone:
-                        chat_label = f"👤 {chat.name} ({phone[-4:]})"
+                        chat_label = f"👤 {chat.name} ({phone[-4:]}) | {phone}"
                     else:
                         chat_label = f"📞 {phone}"
                 

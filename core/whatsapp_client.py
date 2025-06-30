@@ -249,8 +249,6 @@ class WhatsAppMCPClient:
                 error_msg = result.get("message", "Unknown error")
                 logger.error(f"Message sending failed: {error_msg}")
                 return False
-                logger.error(f"Failed to send message to chat {chat_id}: {e}")
-                return False
             
         except Exception as e:
             logger.error(f"Failed to send message to chat {chat_id}: {e}")
