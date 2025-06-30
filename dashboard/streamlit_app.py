@@ -10,6 +10,10 @@ import importlib
 import sys
 # from streamlit_autorefresh import st_autorefresh  # Removed for better UX
 
+# Clear Streamlit cache on each reload to fix update issues
+st.cache_data.clear()
+st.cache_resource.clear()
+
 # Import core modules with proper reloading
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -55,8 +59,63 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Add auto-refresh controls in sidebar
+with st.sidebar:
+    st.header("🔄 Dashboard Controls")
+    
+    auto_refresh = st.checkbox("Auto-refresh (30s)", value=False)
+    if auto_refresh:
+        time.sleep(0.1)  # Small delay for smooth refresh
+        st.rerun()
+    
+    manual_refresh = st.button("🔄 Manual Refresh", use_container_width=True)
+    if manual_refresh:
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
+    
+    st.divider()
+    
+    # Quick connection check
+    st.subheader("⚡ Quick Status")
+    bridge_status = whatsapp_client.health_check()
+    wa_status = whatsapp_client.connection_status()
+    
+    if bridge_status:
+        st.success("🌉 Bridge: Online")
+    else:
+        st.error("🌉 Bridge: Offline")
+    
+    if wa_status.get("connected", False):
+        st.success("📱 WhatsApp: Connected")
+    else:
+        st.error("📱 WhatsApp: Disconnected")
+        
+    # Add refresh timer for auto-refresh
+    if auto_refresh:
+        with st.container():
+            placeholder = st.empty()
+            for i in range(30, 0, -1):
+                placeholder.metric("⏰ Next refresh", f"{i}s")
+                time.sleep(1)
+            placeholder.empty()
+            st.rerun()
+
 def main():
     """Main Streamlit application"""
+    
+    # Quick status check at top
+    bridge_status = whatsapp_client.health_check()
+    wa_status = whatsapp_client.connection_status()
+    
+    # Show quick start if nothing is connected
+    if not bridge_status:
+        st.error("🚫 **WhatsApp Bridge Not Running**")
+        show_quick_start()
+        return
+    elif not wa_status.get("connected", False):
+        st.warning("📱 **WhatsApp Not Connected** - Bridge is running but WhatsApp needs connection")
+    
     # Create tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Overview", 
@@ -85,9 +144,91 @@ def main():
     with tab6:
         show_connection_help()
 
+def show_quick_start():
+    """Show quick start guide when bridge is not running"""
+    st.header("🚀 Quick Start Guide")
+    
+    st.markdown("""
+    ### Step 1: Start the WhatsApp Bridge
+    
+    **Choose your operating system:**
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🪟 Windows")
+        st.code("./start_whatsapp_bridge.bat")
+        st.markdown("*Run this in your project folder*")
+        
+    with col2:
+        st.subheader("🐧 Linux/Mac")  
+        st.code("./start_whatsapp_bridge.sh")
+        st.markdown("*Run this in your project folder*")
+    
+    st.markdown("""
+    ### Step 2: Connect WhatsApp
+    
+    1. **After starting bridge**, a QR code will appear in your terminal
+    2. **Open WhatsApp** on your phone
+    3. **Go to:** Settings → Linked Devices → Link a Device  
+    4. **Scan the QR code** from your terminal
+    5. **Wait for connection** - you'll see "✓ Connected!" message
+    
+    ### Step 3: Test the System
+    
+    1. **Refresh this dashboard** - you should see connected status
+    2. **Go to "Send AI Message" tab**
+    3. **Select a contact** and enter an AI prompt
+    4. **Send your first AI message!**
+    """)
+    
+    # Add refresh button
+    if st.button("🔄 Check Bridge Status", type="primary", use_container_width=True):
+        st.rerun()
+    
+    # Manual bridge start option (if Go is available)
+    with st.expander("🔧 Manual Bridge Start"):
+        st.markdown("""
+        If the startup scripts don't work, try starting manually:
+        
+        ```bash
+        cd whatsapp-mcp/whatsapp-bridge
+        go run main.go
+        ```
+        
+        The bridge should start on port **3334**.
+        """)
+        
+    # Troubleshooting section
+    with st.expander("🔧 Troubleshooting"):
+        st.markdown("""
+        **Common Issues:**
+        
+        1. **"Port already in use"**
+           ```bash
+           # Windows
+           netstat -ano | findstr :3334
+           
+           # Linux/Mac  
+           lsof -ti:3334 | xargs kill
+           ```
+        
+        2. **CGO compilation errors (Windows)**
+           - Install TDM-GCC from https://jmeubank.github.io/tdm-gcc/
+           - Or set `CGO_ENABLED=0` (may lose some features)
+        
+        3. **Go not installed**
+           - Download from https://golang.org/dl/
+           - Follow installation guide for your OS
+                 """)
+
 def show_overview():
     """Main dashboard overview"""
     st.header("🤖 WhatsApp AI Agent Dashboard")
+    
+    # Force refresh connection status every time
+    whatsapp_client.session = requests.Session()  # Reset session
     
     # Connection Status Check
     st.subheader("🔗 Connection Status")
@@ -96,11 +237,15 @@ def show_overview():
     
     with col1:
         st.markdown("**🔧 MCP Bridge Status**")
-        if whatsapp_client.health_check():
+        bridge_healthy = whatsapp_client.health_check()
+        if bridge_healthy:
             st.success("✅ Bridge is running")
         else:
             st.error("❌ Bridge is down")
             st.warning("🚨 **Action Required:** Start the WhatsApp bridge")
+            with st.expander("🚀 How to start bridge"):
+                st.code("./start_whatsapp_bridge.sh  # Linux/Mac")
+                st.code("./start_whatsapp_bridge.bat  # Windows")
     
     with col2:
         st.markdown("**📱 WhatsApp Connection**")
@@ -108,10 +253,54 @@ def show_overview():
         
         if status.get("connected", False):
             st.success("✅ Connected to WhatsApp")
+            # Show additional connection info if available
+            if "phone" in status:
+                st.info(f"📞 Phone: {status['phone']}")
         else:
             st.error("❌ Not connected to WhatsApp")
             st.warning("🚨 **Action Required:** Scan QR code to reconnect")
-            st.info("💡 **Tip:** Go to your bridge terminal and scan the QR code with WhatsApp")
+            
+            # Enhanced reconnection guide
+            with st.expander("📱 **How to Connect WhatsApp**", expanded=True):
+                st.markdown("""
+                ### Step-by-step connection:
+                
+                1. **Go to your bridge terminal** (where you started the bridge)
+                2. **Look for QR code** in the terminal output
+                3. **Open WhatsApp** on your phone
+                4. **Go to:** Settings → Linked Devices → Link a Device
+                5. **Scan the QR code** shown in your terminal
+                6. **Wait for connection** - you'll see "✓ Connected!" message
+                7. **Refresh this dashboard** to see updated status
+                """)
+                
+                st.info("💡 **Tip:** The QR code appears when you first start the bridge or after disconnection")
+                
+                # Add a connection test button
+                if st.button("🔄 Test Connection Now"):
+                    st.rerun()
+    
+    # Show connection troubleshooting if both are having issues
+    if not bridge_healthy:
+        st.error("🔧 **Bridge Connection Required**")
+        st.markdown("""
+        ### 🚀 Start the WhatsApp Bridge:
+        
+        **Option 1: Using startup scripts**
+        ```bash
+        # Windows
+        ./start_whatsapp_bridge.bat
+        
+        # Linux/Mac  
+        ./start_whatsapp_bridge.sh
+        ```
+        
+        **Option 2: Manual start**
+        ```bash
+        cd whatsapp-mcp/whatsapp-bridge
+        go run main.go
+        ```
+        """)
     
     # Module Status Check (Debug Info)
     with st.expander("🔧 **Debug Info** - Module Status", expanded=False):
@@ -156,20 +345,41 @@ def show_overview():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        # Limit chats to 20 for performance
-        chats = whatsapp_client.get_chats(limit=20)
-        st.metric("Total Chats", len(chats))
+        try:
+            # Only fetch if connected
+            if status.get("connected", False):
+                chats = whatsapp_client.get_chats(limit=20)
+                st.metric("Total Chats", len(chats))
+            else:
+                st.metric("Total Chats", "0", help="Connect WhatsApp to see chats")
+        except:
+            st.metric("Total Chats", "Error")
     
     with col2:
-        personal_chats = [c for c in chats if not c.is_group]
-        st.metric("Personal Chats", len(personal_chats))
+        try:
+            if status.get("connected", False) and 'chats' in locals():
+                personal_chats = [c for c in chats if not c.is_group]
+                st.metric("Personal Chats", len(personal_chats))
+            else:
+                st.metric("Personal Chats", "0", help="Connect WhatsApp to see chats")
+        except:
+            st.metric("Personal Chats", "Error")
     
     with col3:
-        group_chats = [c for c in chats if c.is_group]
-        st.metric("Group Chats", len(group_chats))
+        try:
+            if status.get("connected", False) and 'chats' in locals():
+                group_chats = [c for c in chats if c.is_group]
+                st.metric("Group Chats", len(group_chats))
+            else:
+                st.metric("Group Chats", "0", help="Connect WhatsApp to see chats")
+        except:
+            st.metric("Group Chats", "Error")
     
     with col4:
-        st.metric("Bridge Status", "🟢 Online" if whatsapp_client.health_check() else "🔴 Offline")
+        bridge_status_text = "🟢 Online" if bridge_healthy else "🔴 Offline"
+        wa_status_text = "🟢 Connected" if status.get("connected", False) else "🔴 Disconnected"
+        st.metric("Bridge Status", bridge_status_text)
+        st.caption(f"WhatsApp: {wa_status_text}")
 
 def show_recent_messages():
     """Show recent message interactions"""
@@ -254,6 +464,47 @@ def show_send_ai_message():
     """Send AI-generated messages to WhatsApp contacts"""
     st.header("🚀 Send AI Message to WhatsApp")
     
+    # Real-time connection check with auto-refresh
+    status = whatsapp_client.connection_status()
+    bridge_healthy = whatsapp_client.health_check()
+    
+    # Connection status banner
+    if not bridge_healthy:
+        st.error("🔧 **Bridge is not running!**")
+        st.warning("Please start the WhatsApp bridge first")
+        with st.expander("How to start bridge"):
+            st.code("./start_whatsapp_bridge.sh  # Linux/Mac")
+            st.code("./start_whatsapp_bridge.bat  # Windows")
+        return
+    elif not status.get("connected", False):
+        st.warning("📱 **WhatsApp is not connected**")
+        st.info("Bridge is running, but WhatsApp needs to be connected")
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("🔄 Check Connection Again", type="primary"):
+                st.rerun()
+        with col2:
+            st.button("📱 How to Connect", help="See connection guide in sidebar")
+        
+        # Show connection guide
+        with st.expander("📱 **WhatsApp Connection Guide**", expanded=True):
+            st.markdown("""
+            ### Quick connection steps:
+            1. **Check your bridge terminal** for QR code
+            2. **Open WhatsApp** on your phone
+            3. **Settings** → **Linked Devices** → **Link a Device**
+            4. **Scan the QR code** from terminal
+            5. **Wait for "Connected!"** message
+            6. **Click "Check Connection Again"** above
+            """)
+        return
+    else:
+        # Connected successfully
+        st.success("✅ **Ready to send messages!**")
+        if "phone" in status:
+            st.caption(f"📞 Connected as: {status['phone']}")
+    
     # Create tabs for different sending methods
     tab1, tab2 = st.tabs(["📋 Select Recipient", "💬 Mention-Based Messaging"])
     
@@ -270,12 +521,12 @@ def show_traditional_send_message():
     Perfect for getting AI insights and sharing them instantly!
     """)
     
-    # Check WhatsApp connection first
+    # Double-check connection (should be connected if we reach here)
     status = whatsapp_client.connection_status()
     if not status.get("connected", False):
-        st.error("❌ **WhatsApp Not Connected!**")
-        st.warning("🚨 Please reconnect to WhatsApp before sending messages")
-        st.info("💡 **How to reconnect:** Go to your bridge terminal and scan the QR code")
+        st.error("❌ **Connection lost!**")
+        if st.button("🔄 Refresh Page"):
+            st.rerun()
         return
     
     # Load contacts with recent recipients prioritized (optimized)
@@ -422,12 +673,12 @@ def show_mention_based_messaging():
     - `@Sarah Send me a motivational quote`
     """)
     
-    # Check WhatsApp connection first
+    # Double-check connection (should be connected if we reach here)
     status = whatsapp_client.connection_status()
     if not status.get("connected", False):
-        st.error("❌ **WhatsApp Not Connected!**")
-        st.warning("🚨 Please reconnect to WhatsApp before sending messages")
-        st.info("💡 **How to reconnect:** Go to your bridge terminal and scan the QR code")
+        st.error("❌ **Connection lost!**")
+        if st.button("🔄 Refresh Page", key="mention_refresh"):
+            st.rerun()
         return
     
     with st.form("mention_message_form"):

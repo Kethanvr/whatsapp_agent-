@@ -20,6 +20,12 @@
 - **Fix**: Updated to show correct port (3334)
 - **Files Changed**: `start_whatsapp_bridge.sh`, `start_whatsapp_bridge.bat`
 
+### 4. **Fixed Streamlit Dashboard** ✅
+
+- **Issue**: Dashboard not updating properly, caching issues
+- **Fix**: Added cache clearing, auto-refresh, and better connection handling
+- **Files Changed**: `dashboard/streamlit_app.py`
+
 ## Testing Your Setup
 
 ### Step 1: Start the WhatsApp Bridge
@@ -89,7 +95,38 @@ python main.py
 📨 Found X new message(s)
 ```
 
-### Step 4: Test End-to-End Message Flow
+### Step 4: Test Streamlit Dashboard
+
+Start the dashboard:
+
+```bash
+python run_dashboard.py
+# or
+streamlit run dashboard/streamlit_app.py
+```
+
+**Expected behavior:**
+
+1. **If bridge not running**: Shows "Quick Start Guide"
+2. **If bridge running but WhatsApp disconnected**: Shows connection instructions
+3. **If fully connected**: Shows "Ready to send messages!"
+
+**Dashboard Features:**
+
+- **Auto-refresh**: Enable in sidebar for real-time updates
+- **Manual refresh**: Button to force cache clearing
+- **Send AI Message**: Select contact, enter prompt, AI responds and sends
+- **Real-time status**: Bridge and WhatsApp connection status
+
+### Step 5: Test Dashboard Message Sending
+
+1. **Go to "Send AI Message" tab**
+2. **Select a recipient** from recent contacts or all contacts
+3. **Enter an AI prompt**: "Explain artificial intelligence in simple terms"
+4. **Click "Generate & Send"**
+5. **Verify message** appears in recipient's WhatsApp
+
+### Step 6: Test End-to-End Message Flow
 
 1. **Send a trigger message** to your WhatsApp from another phone:
 
@@ -156,6 +193,26 @@ ls -la whatsapp-mcp/whatsapp-bridge/store/
 # Should see: messages.db and whatsapp.db
 ```
 
+#### 6. **Dashboard Not Updating**
+
+- **Dashboard showing old data**: Click "Manual Refresh" in sidebar
+- **Connection status wrong**: Enable "Auto-refresh" for real-time updates
+- **Cache issues**: Restart the dashboard completely
+- **Module errors**: Refresh the page to reload Python modules
+
+```bash
+# Restart dashboard
+pkill -f streamlit  # Kill existing
+python run_dashboard.py  # Restart
+```
+
+#### 7. **Cannot Send Messages from Dashboard**
+
+- **Check Bridge Status**: Must show "Bridge: Online" in sidebar
+- **Check WhatsApp Connection**: Must show "WhatsApp: Connected"
+- **No contacts showing**: Ensure WhatsApp is properly connected
+- **Send button disabled**: Connection status must be green first
+
 ## Testing Message Types
 
 ### Text Messages
@@ -206,6 +263,37 @@ ENABLE_PERSONAL_CHATS=true
 - [ ] Response messages sent
 - [ ] Database stores messages correctly
 
+## Complete Dashboard Workflow
+
+### Sending Messages from Dashboard
+
+1. **Start Bridge**:
+
+   ```bash
+   ./start_whatsapp_bridge.sh
+   ```
+
+2. **Connect WhatsApp**: Scan QR code in terminal
+
+3. **Start Dashboard**:
+
+   ```bash
+   python run_dashboard.py
+   ```
+
+4. **Send AI Message**:
+   - Go to "Send AI Message" tab
+   - Select recipient from contacts
+   - Enter AI prompt: "What is machine learning?"
+   - Click "Generate & Send"
+   - AI processes prompt and sends response to WhatsApp
+
+### Message Flow:
+
+```
+Dashboard → AI Agent → Generate Response → WhatsApp Bridge → Recipient
+```
+
 ## Next Steps
 
 Once everything is working:
@@ -214,7 +302,8 @@ Once everything is working:
 2. **Set authorized numbers** if needed for security
 3. **Customize AI responses** in `core/ai_agent.py`
 4. **Monitor logs** for any errors
-5. **Consider setting up as system service** for production
+5. **Use dashboard** for easy message sending
+6. **Consider setting up as system service** for production
 
 ## Support
 
