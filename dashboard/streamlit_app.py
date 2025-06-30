@@ -615,7 +615,8 @@ def show_traditional_send_message():
                 selected_recent = st.selectbox(
                     "Choose from recent conversations:",
                     options=recent_keys,
-                    index=0,
+                    index=None,
+                    placeholder="Select a recent contact",
                     help="Contacts you've messaged recently",
                     key="recent_select"
                 )
@@ -631,7 +632,8 @@ def show_traditional_send_message():
                 selected_all = st.selectbox(
                     "Choose from all contacts:",
                     options=all_keys,
-                    index=0,
+                    index=None,
+                    placeholder="Select a contact",
                     help="All available WhatsApp contacts and groups",
                     key="all_select"
                 )
