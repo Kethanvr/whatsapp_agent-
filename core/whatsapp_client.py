@@ -303,18 +303,40 @@ class WhatsAppMCPClient:
         """Check if message should trigger bot response"""
         text = message.text.lower().strip()
         
+        # Check if it's a group message (reduce log noise)
+        is_group = "@g.us" in message.chat_id
+        
+        if is_group:
+            # Minimal logging for group messages to reduce noise
+            logger.debug(f"📱 Group message from {message.sender}: {message.text[:50]}...")
+        else:
+            # Debug logging for personal chats
+            logger.info(f"🔍 Checking trigger for message: '{message.text}' from {message.sender}")
+            logger.info(f"🔍 Processed text: '{text}'")
+            logger.info(f"🔍 Available triggers: {settings.trigger_list}")
+            logger.info(f"🔍 Auth numbers: {settings.authorized_number_list}")
+        
         # Check authorization if configured
         if settings.authorized_number_list:
             if message.sender not in settings.authorized_number_list:
+                if not is_group:  # Only log rejections for personal chats
+                    logger.info(f"❌ Message rejected: sender {message.sender} not in authorized list")
                 return False
         
-        # Check for trigger patterns
+        # Check if message contains any trigger
         for trigger in settings.trigger_list:
-            trigger = trigger.lower()
-            if text.startswith(trigger):
+            if not is_group:  # Only log trigger checks for personal chats
+                logger.info(f"🔍 Checking trigger: '{trigger}' against text: '{text}'")
+            
+            if trigger.lower() in text:
+                if not is_group:
+                    logger.info(f"✅ Trigger '{trigger}' matched!")
+                else:
+                    logger.info(f"✅ Group trigger '{trigger}' matched in {message.chat_id}")
                 return True
-            if trigger.startswith("@") and trigger in text:
-                return True
+        
+        if not is_group:
+            logger.info(f"❌ No triggers matched for: '{text}'")
         
         return False
     

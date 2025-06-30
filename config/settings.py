@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     
     # Bot Behavior
     bot_name: str = Field(default="AI Assistant", env="BOT_NAME")
-    bot_triggers: str = Field(default="/ask,@bot,!ai,>", env="BOT_TRIGGERS")
+    bot_triggers: str = Field(default="!ask,@bot,@ai,>", env="BOT_TRIGGERS")
     authorized_numbers: str = Field(default="", env="AUTHORIZED_NUMBERS")
     enable_group_chats: bool = Field(default=True, env="ENABLE_GROUP_CHATS")
     enable_personal_chats: bool = Field(default=True, env="ENABLE_PERSONAL_CHATS")
