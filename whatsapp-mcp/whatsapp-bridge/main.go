@@ -23,7 +23,7 @@ import (
 	"bytes"
 
 	"go.mau.fi/whatsmeow"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -173,7 +173,7 @@ func (store *MessageStore) GetChats() (map[string]time.Time, error) {
 }
 
 // Extract text content from a message
-func extractTextContent(msg *waProto.Message) string {
+func extractTextContent(msg *waE2E.Message) string {
 	if msg == nil {
 		return ""
 	}
@@ -229,7 +229,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		}
 	}
 
-	msg := &waProto.Message{}
+	msg := &waE2E.Message{}
 
 	// Check if we have media to send
 	if mediaPath != "" {
@@ -293,7 +293,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		// Create the appropriate message type based on media type
 		switch mediaType {
 		case whatsmeow.MediaImage:
-			msg.ImageMessage = &waProto.ImageMessage{
+			msg.ImageMessage = &waE2E.ImageMessage{
 				Caption:       proto.String(message),
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,
@@ -321,7 +321,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				fmt.Printf("Not an Ogg Opus file: %s\n", mimeType)
 			}
 
-			msg.AudioMessage = &waProto.AudioMessage{
+			msg.AudioMessage = &waE2E.AudioMessage{
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,
 				DirectPath:    &resp.DirectPath,
@@ -334,7 +334,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				Waveform:      waveform,
 			}
 		case whatsmeow.MediaVideo:
-			msg.VideoMessage = &waProto.VideoMessage{
+			msg.VideoMessage = &waE2E.VideoMessage{
 				Caption:       proto.String(message),
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,
@@ -345,7 +345,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				FileLength:    &resp.FileLength,
 			}
 		case whatsmeow.MediaDocument:
-			msg.DocumentMessage = &waProto.DocumentMessage{
+			msg.DocumentMessage = &waE2E.DocumentMessage{
 				Title:         proto.String(mediaPath[strings.LastIndex(mediaPath, "/")+1:]),
 				Caption:       proto.String(message),
 				Mimetype:      proto.String(mimeType),
@@ -372,7 +372,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 }
 
 // Extract media info from a message
-func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
+func extractMediaInfo(msg *waE2E.Message) (mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
 	if msg == nil {
 		return "", "", "", nil, nil, nil, 0
 	}

@@ -3,7 +3,7 @@ WhatsApp MCP Client - Handles communication with whatsapp-mcp server
 """
 import requests
 import time
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from loguru import logger
 from dataclasses import dataclass
 from config.settings import settings
@@ -36,30 +36,54 @@ class WhatsAppMCPClient:
         self._last_message_ids = {}  # Track last seen message per chat
         
     def health_check(self) -> bool:
-        """Check if MCP server is running"""
+        """Check if MCP server is reachable and connected to WhatsApp"""
         try:
-            response = self.session.get(f"{self.base_url}/health", timeout=5)
-            return response.status_code == 200
+            response = self.session.get(f"{self.base_url}/health")
+            response.raise_for_status()
+            return True
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False
     
-    def get_chats(self) -> List[ChatInfo]:
-        """Get all available chats"""
+    def connection_status(self) -> dict:
+        """Get detailed connection status including WhatsApp connection"""
         try:
-            response = self.session.get(f"{self.base_url}/chats")
+            response = self.session.get(f"{self.base_url}/status")
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Fallback for older bridge versions
+                return {"connected": False, "message": "Status endpoint not available"}
+        except Exception as e:
+            logger.error(f"Failed to get connection status: {e}")
+            return {"connected": False, "message": str(e)}
+
+    def get_chats(self, limit: int = 50) -> List[ChatInfo]:
+        """Get all available chats with optional limit for performance"""
+        try:
+            # Add limit parameter to reduce data fetching
+            params = {"limit": limit} if limit else {}
+            response = self.session.get(f"{self.base_url}/chats", params=params)
             response.raise_for_status()
             
             chats = []
-            for chat_data in response.json():
+            chat_data_list = response.json()
+            
+            # Limit processing if too many chats
+            if len(chat_data_list) > limit:
+                chat_data_list = chat_data_list[:limit]
+                logger.info(f"Limited chat processing to {limit} chats for performance")
+            
+            for chat_data in chat_data_list:
                 # Better contact name resolution
                 name = chat_data.get("name", "Unknown")
                 chat_id = chat_data["id"]
                 
-                # If name is just a phone number, try to get a better name
+                # Quick name resolution without expensive operations
                 if name.isdigit() or name == chat_id.split('@')[0]:
-                    # Try to extract a proper name from recent messages
-                    name = self._get_better_contact_name(chat_id) or f"Contact {name[-4:]}"
+                    # Use simplified naming for performance
+                    phone_suffix = name[-4:] if len(name) >= 4 else name
+                    name = f"Contact {phone_suffix}"
                 
                 chats.append(ChatInfo(
                     id=chat_id,
@@ -67,6 +91,8 @@ class WhatsAppMCPClient:
                     is_group=chat_data.get("isGroup", False),
                     participant_count=chat_data.get("participantCount")
                 ))
+            
+            logger.debug(f"Retrieved {len(chats)} chats")
             return chats
             
         except Exception as e:
@@ -274,6 +300,54 @@ class WhatsAppMCPClient:
                 break
         
         return text if text else message.text
+    
+    def find_contact_by_name(self, search_name: str) -> List[ChatInfo]:
+        """Find contacts by name (fuzzy search)"""
+        try:
+            chats = self.get_chats()
+            matches = []
+            
+            search_name_lower = search_name.lower().strip()
+            
+            for chat in chats:
+                if chat.is_group:
+                    continue  # Skip groups for mention-based messaging
+                
+                # Get better contact name
+                contact_name = chat.name
+                if contact_name.isdigit() or contact_name == chat.id.split('@')[0]:
+                    contact_name = self._get_better_contact_name(chat.id) or f"Contact {contact_name[-4:]}"
+                
+                # Check for name matches (fuzzy)
+                if search_name_lower in contact_name.lower():
+                    phone = chat.id.split('@')[0]
+                    matches.append(ChatInfo(
+                        id=chat.id,
+                        name=f"{contact_name} ({phone})",
+                        is_group=False,
+                        participant_count=None
+                    ))
+            
+            return matches
+            
+        except Exception as e:
+            logger.error(f"Failed to find contact by name: {e}")
+            return []
+    
+    def parse_mention_message(self, message: str) -> Tuple[Optional[str], str]:
+        """Parse message for @mentions and extract recipient and clean message"""
+        import re
+        
+        # Look for @mentions at the beginning of the message
+        mention_pattern = r'^@(\w+(?:\s+\w+)*)\s+(.*)'
+        match = re.match(mention_pattern, message.strip())
+        
+        if match:
+            mentioned_name = match.group(1).strip()
+            clean_message = match.group(2).strip()
+            return mentioned_name, clean_message
+        
+        return None, message
 
 # Global client instance
 whatsapp_client = WhatsAppMCPClient() 

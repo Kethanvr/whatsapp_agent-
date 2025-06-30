@@ -6,17 +6,46 @@ import time
 import requests
 from datetime import datetime, timedelta
 import pandas as pd
+import importlib
+import sys
 # from streamlit_autorefresh import st_autorefresh  # Removed for better UX
 
-# Import core modules
-import sys
+# Import core modules with proper reloading
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.whatsapp_client import whatsapp_client
-from core.ai_agent import ai_agent
-from core.message_processor import message_processor
+# Force reload environment variables
+if os.path.exists('.env'):
+    from dotenv import load_dotenv
+    load_dotenv('.env', override=True)
+
+# Import and ensure fresh module loading
 from config.settings import settings
+
+# Force reload of modules to pick up new methods
+try:
+    from core import whatsapp_client as wc_module
+    from core import message_processor as mp_module
+    from core import ai_agent as ai_module
+    
+    # Reload modules to ensure fresh imports
+    importlib.reload(wc_module)
+    importlib.reload(mp_module)
+    importlib.reload(ai_module)
+    
+    # Import the actual objects
+    from core.whatsapp_client import whatsapp_client
+    from core.message_processor import message_processor
+    from core.ai_agent import ai_agent
+    
+    logger = None  # We'll use st.write for logging in streamlit
+    
+except Exception as e:
+    st.error(f"Module import/reload failed: {e}")
+    # Fallback imports
+    from core.whatsapp_client import whatsapp_client
+    from core.message_processor import message_processor
+    from core.ai_agent import ai_agent
 
 # Page config
 st.set_page_config(
@@ -27,43 +56,16 @@ st.set_page_config(
 )
 
 def main():
-    """Main dashboard application"""
-    st.title("🤖 WhatsApp AI Assistant Dashboard")
-    st.markdown("---")
-    
-    # Sidebar
-    with st.sidebar:
-        st.header("🎛️ Control Panel")
-        
-        # Status
-        st.subheader("📊 Status")
-        
-        # Check MCP server status
-        mcp_status = whatsapp_client.health_check()
-        status_color = "green" if mcp_status else "red"
-        status_text = "Online" if mcp_status else "Offline"
-        st.markdown(f"**MCP Server:** :{status_color}[{status_text}]")
-        
-        # Processor status
-        processor_status = message_processor.is_running
-        proc_color = "green" if processor_status else "red"
-        proc_text = "Running" if processor_status else "Stopped"
-        st.markdown(f"**Message Processor:** :{proc_color}[{proc_text}]")
-        
-        st.markdown("---")
-        
-        # Settings
-        st.subheader("⚙️ Settings")
-        st.text(f"Bot Name: {settings.bot_name}")
-        st.text(f"Model: {settings.agent_model}")
-        st.text(f"Poll Interval: {settings.mcp_poll_interval}s")
-        st.text(f"Triggers: {', '.join(settings.trigger_list)}")
-        
-        # Auto-refresh toggle removed for better UX
-        st.markdown("---")
-    
-    # Main content tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Overview", "💬 Recent Messages", "🚀 Send AI Message", "🧪 Test Agent", "📋 Logs"])
+    """Main Streamlit application"""
+    # Create tabs
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📊 Overview", 
+        "💬 Recent Messages", 
+        "🚀 Send AI Message", 
+        "🧪 Test Agent", 
+        "📋 Logs",
+        "🔗 Connection Help"
+    ])
     
     with tab1:
         show_overview()
@@ -79,107 +81,210 @@ def main():
     
     with tab5:
         show_logs()
+    
+    with tab6:
+        show_connection_help()
 
 def show_overview():
-    """Show overview dashboard"""
-    st.header("📈 System Overview")
+    """Main dashboard overview"""
+    st.header("🤖 WhatsApp AI Agent Dashboard")
     
-    # Get stats
-    stats = message_processor.get_stats()
+    # Connection Status Check
+    st.subheader("🔗 Connection Status")
     
-    # Metrics
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**🔧 MCP Bridge Status**")
+        if whatsapp_client.health_check():
+            st.success("✅ Bridge is running")
+        else:
+            st.error("❌ Bridge is down")
+            st.warning("🚨 **Action Required:** Start the WhatsApp bridge")
+    
+    with col2:
+        st.markdown("**📱 WhatsApp Connection**")
+        status = whatsapp_client.connection_status()
+        
+        if status.get("connected", False):
+            st.success("✅ Connected to WhatsApp")
+        else:
+            st.error("❌ Not connected to WhatsApp")
+            st.warning("🚨 **Action Required:** Scan QR code to reconnect")
+            st.info("💡 **Tip:** Go to your bridge terminal and scan the QR code with WhatsApp")
+    
+    # Module Status Check (Debug Info)
+    with st.expander("🔧 **Debug Info** - Module Status", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**WhatsApp Client**")
+            if hasattr(whatsapp_client, 'parse_mention_message'):
+                st.success("✅ parse_mention_message available")
+            else:
+                st.error("❌ parse_mention_message missing")
+            
+            if hasattr(whatsapp_client, 'find_contact_by_name'):
+                st.success("✅ find_contact_by_name available")
+            else:
+                st.error("❌ find_contact_by_name missing")
+        
+        with col2:
+            st.markdown("**Message Processor**")
+            if hasattr(message_processor, 'get_recent_interactions'):
+                st.success("✅ get_recent_interactions available")
+            else:
+                st.error("❌ get_recent_interactions missing")
+                
+            if hasattr(message_processor, 'test_ai_response'):
+                st.success("✅ test_ai_response available")
+            else:
+                st.error("❌ test_ai_response missing")
+        
+        with col3:
+            st.markdown("**AI Agent**")
+            if hasattr(ai_agent, 'get_simple_response'):
+                st.success("✅ get_simple_response available")
+            else:
+                st.error("❌ get_simple_response missing")
+                
+            st.text(f"Model: {getattr(ai_agent, 'model_name', 'Unknown')}")
+    
+    # Quick Stats (optimized)
+    st.subheader("📊 Quick Stats")
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Messages Processed", stats.get("total_messages_processed", 0))
+        # Limit chats to 20 for performance
+        chats = whatsapp_client.get_chats(limit=20)
+        st.metric("Total Chats", len(chats))
     
     with col2:
-        st.metric("Responses Sent", stats.get("total_responses_sent", 0))
+        personal_chats = [c for c in chats if not c.is_group]
+        st.metric("Personal Chats", len(personal_chats))
     
     with col3:
-        st.metric("Errors", stats.get("errors", 0))
+        group_chats = [c for c in chats if c.is_group]
+        st.metric("Group Chats", len(group_chats))
     
     with col4:
-        uptime = stats.get("uptime_seconds", 0)
-        uptime_str = str(timedelta(seconds=int(uptime))) if uptime > 0 else "Not running"
-        st.metric("Uptime", uptime_str)
-    
-    # Charts
-    st.subheader("📊 Activity Charts")
-    
-    # Get recent interactions
-    interactions = message_processor.get_recent_interactions(50)
-    
-    if interactions:
-        # Create DataFrame
-        df = pd.DataFrame(interactions)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        
-        # Messages over time
-        st.subheader("Messages Over Time")
-        df_hourly = df.groupby(df['timestamp'].dt.floor('H')).size().reset_index()
-        df_hourly.columns = ['Hour', 'Message Count']
-        st.line_chart(df_hourly.set_index('Hour'))
-        
-        # Response time distribution
-        st.subheader("Response Time Distribution")
-        st.histogram_chart(df['processing_time'])
-        
-        # Top senders
-        st.subheader("Top Senders")
-        sender_counts = df['sender'].value_counts().head(10)
-        st.bar_chart(sender_counts)
-    else:
-        st.info("No message interactions yet. Start chatting with the bot!")
+        st.metric("Bridge Status", "🟢 Online" if whatsapp_client.health_check() else "🔴 Offline")
 
 def show_recent_messages():
     """Show recent message interactions"""
     st.header("💬 Recent Messages")
     
-    # Get recent interactions
-    interactions = message_processor.get_recent_interactions(20)
-    
-    if not interactions:
-        st.info("No recent messages. The bot is waiting for conversations!")
+    try:
+        # Try to get recent interactions with error handling
+        if hasattr(message_processor, 'get_recent_interactions'):
+            interactions = message_processor.get_recent_interactions(20)
+        else:
+            st.error("❌ **Method Error:** get_recent_interactions not available")
+            st.warning("🔄 **Try refreshing the page** - the module may need to reload")
+            st.info("💡 This might happen after code updates. The method should be available after refresh.")
+            return
+    except AttributeError as e:
+        st.error(f"❌ **AttributeError:** {str(e)}")
+        st.warning("🔄 **Module reload needed** - Please refresh the page")
+        st.info("💡 **Alternative:** Use the Test Agent tab to test AI responses")
+        return
+    except Exception as e:
+        st.error(f"❌ **Unexpected Error:** {str(e)}")
+        st.warning("🔧 **Debug Info:** Check if the message processor is properly initialized")
         return
     
+    if not interactions:
+        st.info("🤖 **No recent messages yet!**")
+        st.markdown("""
+        ### 💡 **How to generate interactions:**
+        
+        1. **Use the 🚀 Send AI Message tab** to send messages to contacts
+        2. **Send WhatsApp messages** with triggers like `/ask` or `!ai`
+        3. **Test the AI** using the 🧪 Test Agent tab
+        
+        Messages will appear here once the bot starts processing conversations!
+        """)
+        return
+    
+    st.success(f"📊 **Found {len(interactions)} recent interactions**")
+    
     # Display messages
-    for interaction in reversed(interactions):
+    for i, interaction in enumerate(reversed(interactions)):
         with st.container():
             col1, col2 = st.columns([3, 1])
             
             with col1:
                 # Message header
-                timestamp = datetime.fromisoformat(interaction['timestamp'])
-                st.markdown(f"**{interaction['sender']}** - {timestamp.strftime('%H:%M:%S')}")
+                try:
+                    timestamp = datetime.fromisoformat(interaction['timestamp'])
+                    formatted_time = timestamp.strftime('%H:%M:%S')
+                except:
+                    formatted_time = "Unknown time"
+                
+                st.markdown(f"**👤 {interaction.get('sender', 'Unknown')}** - {formatted_time}")
                 
                 # Query and response
-                st.markdown(f"🙋 **Query:** {interaction['query']}")
-                st.markdown(f"🤖 **Response:** {interaction['response']}")
+                query = interaction.get('query', 'No query')
+                response = interaction.get('response', 'No response')
+                
+                st.markdown(f"🙋 **Query:** {query}")
+                st.markdown(f"🤖 **Response:** {response[:200]}{'...' if len(response) > 200 else ''}")
             
             with col2:
                 # Metadata
-                st.text(f"⏱️ {interaction['processing_time']:.2f}s")
-                status = "✅" if interaction['success'] else "❌"
-                st.text(f"Status: {status}")
+                processing_time = interaction.get('processing_time', 0)
+                st.text(f"⏱️ {processing_time:.2f}s")
+                
+                success = interaction.get('success', False)
+                status = "✅ Sent" if success else "❌ Failed"
+                st.text(f"{status}")
+                
+                # Chat ID for reference
+                chat_id = interaction.get('chat_id', 'Unknown')
+                st.caption(f"Chat: {chat_id[-10:]}...")
             
             st.markdown("---")
+    
+    # Show refresh button
+    if st.button("🔄 Refresh Messages"):
+        st.rerun()
 
 def show_send_ai_message():
     """Send AI-generated messages to WhatsApp contacts"""
     st.header("🚀 Send AI Message to WhatsApp")
     
+    # Create tabs for different sending methods
+    tab1, tab2 = st.tabs(["📋 Select Recipient", "💬 Mention-Based Messaging"])
+    
+    with tab1:
+        show_traditional_send_message()
+    
+    with tab2:
+        show_mention_based_messaging()
+
+def show_traditional_send_message():
+    """Traditional recipient selection method"""
     st.markdown("""
     Enter a prompt for the AI and send the response directly to any WhatsApp contact or group.
     Perfect for getting AI insights and sharing them instantly!
     """)
     
-    # Load contacts with recent recipients prioritized
+    # Check WhatsApp connection first
+    status = whatsapp_client.connection_status()
+    if not status.get("connected", False):
+        st.error("❌ **WhatsApp Not Connected!**")
+        st.warning("🚨 Please reconnect to WhatsApp before sending messages")
+        st.info("💡 **How to reconnect:** Go to your bridge terminal and scan the QR code")
+        return
+    
+    # Load contacts with recent recipients prioritized (optimized)
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("👥 Recent Contacts")
         with st.spinner("Loading recent contacts..."):
+            # Limit to 10 recent contacts for performance
             recent_chats = whatsapp_client.get_recent_recipients(limit=10)
         
         recent_options = {}
@@ -189,8 +294,9 @@ def show_send_ai_message():
     
     with col2:
         st.subheader("📋 All Contacts")
-        with st.spinner("Loading all contacts..."):
-            all_chats = whatsapp_client.get_chats()
+        with st.spinner("Loading contacts..."):
+            # Limit to 30 contacts for performance
+            all_chats = whatsapp_client.get_chats(limit=30)
         
         all_options = {}
         if all_chats:
@@ -301,33 +407,172 @@ def show_send_ai_message():
     
     # Process the form submission
     if send_button:
-        # Validation
-        if not ai_prompt.strip():
-            st.error("❌ Please enter a prompt for the AI!")
+        process_traditional_send(ai_prompt, selected_chat, selected_id, recent_options, all_options)
+
+def show_mention_based_messaging():
+    """Mention-based messaging where users type @name followed by message"""
+    st.markdown("""
+    🎯 **Mention-Based Messaging**
+    
+    Type your message starting with `@ContactName` followed by your prompt. The AI will generate a response and send it to that contact.
+    
+    **Examples:**
+    - `@John What's the weather like today?`
+    - `@Mom Can you explain quantum physics in simple terms?`
+    - `@Sarah Send me a motivational quote`
+    """)
+    
+    # Check WhatsApp connection first
+    status = whatsapp_client.connection_status()
+    if not status.get("connected", False):
+        st.error("❌ **WhatsApp Not Connected!**")
+        st.warning("🚨 Please reconnect to WhatsApp before sending messages")
+        st.info("💡 **How to reconnect:** Go to your bridge terminal and scan the QR code")
+        return
+    
+    with st.form("mention_message_form"):
+        st.subheader("💬 Compose Message")
+        
+        message_input = st.text_area(
+            "📝 Type your message:",
+            placeholder="@ContactName Ask the AI about artificial intelligence and how it works",
+            height=150,
+            help="Start with @ContactName followed by your AI prompt"
+        )
+        
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            parse_button = st.form_submit_button(
+                "🔍 Parse & Preview",
+                type="primary",
+                use_container_width=True
+            )
+    
+    # Parse the message
+    if parse_button and message_input.strip():
+        try:
+            # Parse the mention message using the global whatsapp_client
+            mentioned_name, clean_message = whatsapp_client.parse_mention_message(message_input)
+            
+            if not mentioned_name:
+                st.error("❌ No mention found! Please start your message with @ContactName")
+                st.info("💡 **Example:** `@John Tell me about AI`")
+                return
+            
+            if not clean_message.strip():
+                st.error("❌ No message content found! Please add your prompt after the mention.")
+                st.info("💡 **Example:** `@John Tell me about AI`")
+                return
+            
+            # Find matching contacts
+            st.subheader(f"🔍 Finding contacts matching: '{mentioned_name}'")
+            
+            with st.spinner("Searching contacts..."):
+                matches = whatsapp_client.find_contact_by_name(mentioned_name)
+            
+            if not matches:
+                st.error(f"❌ No contacts found matching '{mentioned_name}'")
+                st.info("💡 Try a different name or check your contact list")
+                return
+            
+            if len(matches) == 1:
+                # Single match - show confirmation
+                contact = matches[0]
+                show_send_confirmation(contact, clean_message, mentioned_name)
+            else:
+                # Multiple matches - let user choose
+                st.warning(f"🤔 Found {len(matches)} contacts matching '{mentioned_name}'. Please choose:")
+                
+                for i, contact in enumerate(matches):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.write(f"**{contact.name}**")
+                        st.caption(f"ID: {contact.id}")
+                    
+                    with col2:
+                        if st.button(f"Select", key=f"select_{i}"):
+                            st.session_state.selected_contact = contact
+                            st.session_state.clean_message = clean_message
+                            st.session_state.mentioned_name = mentioned_name
+                            st.rerun()
+            
+            # Handle session state for selected contact
+            if hasattr(st.session_state, 'selected_contact'):
+                contact = st.session_state.selected_contact
+                clean_msg = st.session_state.clean_message
+                mention = st.session_state.mentioned_name
+                
+                # Clear session state
+                del st.session_state.selected_contact
+                del st.session_state.clean_message
+                del st.session_state.mentioned_name
+                
+                show_send_confirmation(contact, clean_msg, mention)
+                
+        except AttributeError as e:
+            st.error(f"❌ **Method Error:** {str(e)}")
+            st.warning("🔄 **Try refreshing the page** - the module may need to reload")
+            st.info("💡 If the error persists, restart the dashboard")
+        except Exception as e:
+            st.error(f"❌ **Unexpected Error:** {str(e)}")
+
+def show_send_confirmation(contact, message, mentioned_name):
+    """Show confirmation dialog before sending message"""
+    st.subheader("✅ Confirmation Required")
+    
+    # Check connection status again before sending
+    status = whatsapp_client.connection_status()
+    if not status.get("connected", False):
+        st.error("❌ **WhatsApp connection lost!**")
+        st.warning("🚨 Please reconnect to WhatsApp before sending")
+        return
+    
+    # Extract phone number for verification
+    phone = contact.id.split('@')[0]
+    
+    # Show confirmation details
+    st.success(f"🎯 **Ready to send to:** {contact.name}")
+    st.info(f"📱 **Phone Number:** {phone}")
+    st.info(f"💬 **Message:** {message}")
+    
+    # Confirmation form
+    with st.form("confirmation_form"):
+        st.warning("⚠️ **Please verify the phone number above before sending!**")
+        
+        confirm_checkbox = st.checkbox(
+            f"I confirm sending to {phone}",
+            help="Check this box to confirm the recipient phone number"
+        )
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            send_confirmed = st.form_submit_button(
+                "✅ Confirm & Send",
+                type="primary",
+                disabled=not confirm_checkbox
+            )
+        
+        with col2:
+            cancel_send = st.form_submit_button("❌ Cancel")
+    
+    # Process confirmation
+    if send_confirmed and confirm_checkbox:
+        # Double-check connection before proceeding
+        current_status = whatsapp_client.connection_status()
+        if not current_status.get("connected", False):
+            st.error("❌ **Connection lost during confirmation!**")
+            st.warning("🚨 WhatsApp disconnected. Please reconnect and try again.")
             return
         
-        # Validate recipient selection
-        if not selected_chat or not selected_id:
-            st.error("❌ Please select a recipient from one of the tabs above!")
-            return
-        
-        recipient_id = selected_id
-        recipient_name = selected_chat
-        
-        # Debug info to show what recipient is selected
-        st.info(f"🎯 **Selected Recipient:** {recipient_name}")
-        st.info(f"📱 **Recipient ID:** {recipient_id}")
-        st.info(f"📋 **Recent Contacts:** {len(recent_options) if recent_options else 0}")
-        st.info(f"📋 **All Contacts:** {len(all_options) if all_options else 0}")
-        
-        # Process the AI request
+        # Generate AI response and send
         st.subheader("🔄 Processing...")
         
-        # Step 1: Generate AI response
-        with st.spinner("🤖 AI is thinking..."):
+        with st.spinner("🤖 AI is generating response..."):
             start_time = time.time()
             try:
-                ai_response = ai_agent.get_simple_response(ai_prompt)
+                ai_response = ai_agent.get_simple_response(message)
                 ai_time = time.time() - start_time
                 
                 if not ai_response:
@@ -340,41 +585,129 @@ def show_send_ai_message():
                 st.error(f"❌ AI Error: {str(e)}")
                 return
         
-        # Show AI response
+        # Show AI response preview
         with st.expander("🤖 AI Response Preview", expanded=True):
             st.info(ai_response)
         
-        # Step 2: Send to WhatsApp
+        # Send to WhatsApp with better error handling
         with st.spinner("📱 Sending to WhatsApp..."):
             send_start = time.time()
             try:
-                success = whatsapp_client.send_message(recipient_id, ai_response)
+                success = whatsapp_client.send_message(contact.id, ai_response)
                 send_time = time.time() - send_start
                 
                 if success:
-                    st.success(f"✅ Message sent successfully in {send_time:.2f}s!")
+                    st.success(f"✅ Message sent successfully to {contact.name} in {send_time:.2f}s!")
                     
-                    # Show summary
+                    # Show delivery summary
                     st.subheader("📊 Delivery Summary")
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        st.metric("👤 Recipient", recipient_name)
+                        st.metric("👤 Recipient", contact.name)
                     with col2:
                         st.metric("⏱️ AI Time", f"{ai_time:.2f}s")
                     with col3:
                         st.metric("📤 Send Time", f"{send_time:.2f}s")
                     
-                    # Success message with action suggestion
-                    st.info("💡 **Tip:** Check your WhatsApp to see the message delivered!")
+                    st.balloons()
+                    st.info("💡 **Success!** Check your WhatsApp to see the message delivered!")
                     
                 else:
-                    st.error("❌ Failed to send message to WhatsApp. Please check your connection.")
+                    st.error("❌ Failed to send message to WhatsApp.")
+                    st.warning("🔧 **Possible Issues:**")
+                    st.write("• WhatsApp connection may have been lost")
+                    st.write("• Bridge server error occurred")
+                    st.write("• Invalid recipient ID")
+                    st.info("💡 **Solution:** Check connection status and try again")
                     
             except Exception as e:
                 st.error(f"❌ WhatsApp Send Error: {str(e)}")
+                if "500 Server Error" in str(e):
+                    st.warning("🚨 **Server Error Detected**")
+                    st.write("• WhatsApp bridge encountered an internal error")
+                    st.write("• Connection to WhatsApp may be lost")
+                    st.info("💡 **Solution:** Reconnect to WhatsApp and try again")
     
-    # Quick action examples
+    elif cancel_send:
+        st.info("❌ Send cancelled by user")
+
+def process_traditional_send(ai_prompt, selected_chat, selected_id, recent_options, all_options):
+    """Process traditional send form submission"""
+    # Validation
+    if not ai_prompt.strip():
+        st.error("❌ Please enter a prompt for the AI!")
+        return
+    
+    # Validate recipient selection
+    if not selected_chat or not selected_id:
+        st.error("❌ Please select a recipient from one of the tabs above!")
+        return
+    
+    recipient_id = selected_id
+    recipient_name = selected_chat
+    
+    # Debug info to show what recipient is selected
+    st.info(f"🎯 **Selected Recipient:** {recipient_name}")
+    st.info(f"📱 **Recipient ID:** {recipient_id}")
+    st.info(f"📋 **Recent Contacts:** {len(recent_options) if recent_options else 0}")
+    st.info(f"📋 **All Contacts:** {len(all_options) if all_options else 0}")
+    
+    # Process the AI request
+    st.subheader("🔄 Processing...")
+    
+    # Step 1: Generate AI response
+    with st.spinner("🤖 AI is thinking..."):
+        start_time = time.time()
+        try:
+            ai_response = ai_agent.get_simple_response(ai_prompt)
+            ai_time = time.time() - start_time
+            
+            if not ai_response:
+                st.error("❌ AI failed to generate a response. Please try again.")
+                return
+            
+            st.success(f"✅ AI response generated in {ai_time:.2f}s")
+            
+        except Exception as e:
+            st.error(f"❌ AI Error: {str(e)}")
+            return
+    
+    # Show AI response
+    with st.expander("🤖 AI Response Preview", expanded=True):
+        st.info(ai_response)
+    
+    # Step 2: Send to WhatsApp
+    with st.spinner("📱 Sending to WhatsApp..."):
+        send_start = time.time()
+        try:
+            success = whatsapp_client.send_message(recipient_id, ai_response)
+            send_time = time.time() - send_start
+            
+            if success:
+                st.success(f"✅ Message sent successfully in {send_time:.2f}s!")
+                
+                # Show summary
+                st.subheader("📊 Delivery Summary")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("👤 Recipient", recipient_name)
+                with col2:
+                    st.metric("⏱️ AI Time", f"{ai_time:.2f}s")
+                with col3:
+                    st.metric("📤 Send Time", f"{send_time:.2f}s")
+                
+                # Success message with action suggestion
+                st.info("💡 **Tip:** Check your WhatsApp to see the message delivered!")
+                
+            else:
+                st.error("❌ Failed to send message to WhatsApp. Please check your connection.")
+                
+        except Exception as e:
+            st.error(f"❌ WhatsApp Send Error: {str(e)}")
+    
+    # Quick action examples (for both tabs)
     st.markdown("---")
     st.subheader("💡 Quick Examples")
     
@@ -532,6 +865,94 @@ def show_logs():
             st.dataframe(pd.DataFrame(chat_data))
         else:
             st.warning("No chats found or unable to fetch chats")
+
+def show_connection_help():
+    """Show WhatsApp connection troubleshooting guide"""
+    st.header("🔗 WhatsApp Connection Help")
+    
+    # Current status
+    st.subheader("📊 Current Status")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if whatsapp_client.health_check():
+            st.success("✅ **Bridge Server:** Running")
+        else:
+            st.error("❌ **Bridge Server:** Not running")
+    
+    with col2:
+        status = whatsapp_client.connection_status()
+        if status.get("connected", False):
+            st.success("✅ **WhatsApp:** Connected")
+        else:
+            st.error("❌ **WhatsApp:** Disconnected")
+    
+    # Troubleshooting steps
+    st.subheader("🛠️ Troubleshooting Steps")
+    
+    st.markdown("""
+    ### 📱 If WhatsApp is Disconnected:
+    
+    1. **Open your WhatsApp Bridge terminal**
+       - Look for the window running `go run .` in the `whatsapp-bridge` folder
+    
+    2. **Look for QR Code**
+       - The terminal should show a QR code
+       - If no QR code appears, restart the bridge: `Ctrl+C` then `go run .`
+    
+    3. **Scan QR Code**
+       - Open WhatsApp on your phone
+       - Go to **Settings > Linked Devices**
+       - Tap **Link a Device**
+       - Scan the QR code from your terminal
+    
+    4. **Wait for Connection**
+       - After scanning, wait 10-15 seconds
+       - Check this dashboard for green "Connected" status
+    
+    ### 🔧 If Bridge Server is Down:
+    
+    1. **Navigate to bridge folder:**
+       ```bash
+       cd whatsapp-mcp/whatsapp-bridge
+       ```
+    
+    2. **Start the bridge:**
+       ```bash
+       go run .
+       ```
+    
+    3. **Check the port:**
+       - Bridge should run on `localhost:3334`
+       - Look for message: `Server listening on :3334`
+    """)
+    
+    # Quick actions
+    st.subheader("⚡ Quick Actions")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🔄 Refresh Status", type="primary"):
+            st.rerun()
+    
+    with col2:
+        if st.button("🧪 Test Connection"):
+            with st.spinner("Testing..."):
+                bridge_ok = whatsapp_client.health_check()
+                wa_status = whatsapp_client.connection_status()
+                
+            if bridge_ok and wa_status.get("connected", False):
+                st.success("🎉 All systems working!")
+            elif bridge_ok:
+                st.warning("⚠️ Bridge OK, but WhatsApp disconnected")
+            else:
+                st.error("❌ Bridge server not responding")
+    
+    with col3:
+        if st.button("📋 Show Bridge Logs"):
+            st.info("💡 Check your terminal running the WhatsApp bridge for detailed logs")
 
 if __name__ == "__main__":
     main() 

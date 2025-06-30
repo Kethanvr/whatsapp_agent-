@@ -42,7 +42,7 @@ fi
 
 echo "🔄 Starting WhatsApp bridge..."
 echo "📱 On first run, scan the QR code with your WhatsApp app"
-echo "🌐 Bridge will run on http://localhost:3333"
+echo "🌐 Bridge will run on http://localhost:3334"
 echo "=============================================="
 
 # Try to run with error handling
