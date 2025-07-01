@@ -12,27 +12,39 @@ from core.message_processor import message_processor
 from config.settings import settings
 
 def setup_logging():
-    """Configure logging with loguru"""
+    """Configure clean, structured logging with loguru"""
     # Remove default logger
     logger.remove()
     
-    # Console logging
+    # Console logging with cleaner format
     if settings.enable_console_logs:
+        # Main console format - cleaner and more readable
         logger.add(
             sys.stdout,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            format="<blue>{time:HH:mm:ss}</blue> | <level>{level:^8}</level> | <level>{message}</level>",
             level=settings.log_level,
-            colorize=True
+            colorize=True,
+            filter=lambda record: not record["name"].startswith("core.whatsapp_client") or record["level"].name in ["ERROR", "WARNING"]
         )
+        
+        # Separate detailed logger for debugging (only for DEBUG level)
+        if settings.log_level == "DEBUG":
+            logger.add(
+                sys.stdout, 
+                format="<green>{time:HH:mm:ss}</green> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
+                level="DEBUG",
+                colorize=True,
+                filter=lambda record: record["level"].name == "DEBUG"
+            )
     
-    # File logging
+    # File logging with full details
     if settings.enable_file_logs:
         logger.add(
             "logs/whatsapp_ai_{time:YYYY-MM-DD}.log",
             rotation="1 day",
             retention="7 days",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            level=settings.log_level
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+            level="DEBUG"  # Always log everything to file
         )
 
 def signal_handler(signum, frame):
@@ -66,58 +78,105 @@ def check_environment():
     return True
 
 def display_startup_info():
-    """Display startup information"""
-    logger.info("🤖 WhatsApp AI Assistant Starting...")
-    logger.info("=" * 50)
-    logger.info(f"Bot Name: {settings.bot_name}")
-    logger.info(f"Agent Model: {settings.agent_model}")
-    logger.info(f"MCP Server: {settings.mcp_server_url}")
-    logger.info(f"Poll Interval: {settings.mcp_poll_interval}s")
-    logger.info(f"Triggers: {', '.join(settings.trigger_list)}")
-    logger.info(f"Group Chats: {'Enabled' if settings.enable_group_chats else 'Disabled'}")
-    logger.info(f"Personal Chats: {'Enabled' if settings.enable_personal_chats else 'Disabled'}")
+    """Display clean startup information"""
+    # Main header
+    logger.info("🚀 Starting WhatsApp AI Assistant with Multi-Agent Orchestration")
+    logger.info("")
+    
+    # Configuration section
+    logger.info("⚙️  System Configuration:")
+    logger.info(f"   • Bot Name: {settings.bot_name}")
+    logger.info(f"   • Agent Model: {settings.agent_model}")
+    logger.info(f"   • MCP Server: {settings.mcp_server_url}")
+    logger.info(f"   • Poll Interval: {settings.mcp_poll_interval}s")
+    logger.info("")
+    
+    # Bot behavior section  
+    logger.info("🤖 Bot Behavior:")
+    logger.info(f"   • Triggers: {', '.join(settings.trigger_list)}")
+    logger.info(f"   • Group Chats: {'✅ Enabled' if settings.enable_group_chats else '❌ Disabled'}")
+    logger.info(f"   • Personal Chats: {'✅ Enabled' if settings.enable_personal_chats else '❌ Disabled'}")
     
     if settings.authorized_number_list:
-        logger.info(f"Authorized Numbers: {len(settings.authorized_number_list)} configured")
+        logger.info(f"   • Authorization: 🔒 {len(settings.authorized_number_list)} numbers allowed")
     else:
-        logger.info("Authorized Numbers: All numbers allowed")
+        logger.info("   • Authorization: 🌐 All numbers allowed")
+    logger.info("")
     
-    logger.info("=" * 50)
-    logger.info("💡 Dashboard available at: http://localhost:8501")
-    logger.info("💡 To start dashboard: streamlit run dashboard/streamlit_app.py")
-    logger.info("=" * 50)
+    # Access information
+    logger.info("🌐 Access Points:")
+    logger.info("   • Dashboard: http://localhost:8503")
+    logger.info("   • Start Command: python run_dashboard.py")
+    logger.info("")
+    
+    # Status indicator
+    logger.info("🎯 Multi-Agent System: Initializing...")
+    logger.info("📱 WhatsApp Bridge: Connecting...")
+    logger.info("")
+
+def display_status_update(message: str, status: str = "INFO"):
+    """Display clean status updates"""
+    icons = {
+        "SUCCESS": "✅",
+        "ERROR": "❌", 
+        "WARNING": "⚠️",
+        "INFO": "ℹ️",
+        "LOADING": "⏳"
+    }
+    
+    icon = icons.get(status, "ℹ️")
+    if status == "SUCCESS":
+        logger.success(f"{icon} {message}")
+    elif status == "ERROR":
+        logger.error(f"{icon} {message}")
+    elif status == "WARNING":
+        logger.warning(f"{icon} {message}")
+    else:
+        logger.info(f"{icon} {message}")
 
 def main():
     """Main application entry point"""
     # Setup logging
     setup_logging()
     
+    # Display startup info
+    display_startup_info()
+    
     # Check environment
     if not check_environment():
+        display_status_update("Environment configuration failed", "ERROR")
         sys.exit(1)
+    
+    display_status_update("Environment configuration valid", "SUCCESS")
     
     # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    # Display startup info
-    display_startup_info()
+    display_status_update("Signal handlers configured", "SUCCESS")
     
     try:
+        # Initialize multi-agent system
+        display_status_update("Initializing multi-agent orchestrator...", "LOADING")
+        
         # Start the message processor
+        display_status_update("Starting message processor...", "LOADING")
         success = message_processor.start_polling()
         
         if not success:
-            logger.error("Failed to start message processor")
+            display_status_update("Message processor failed to start", "ERROR")
             sys.exit(1)
+        
+        display_status_update("System is now ready and processing messages!", "SUCCESS")
             
     except KeyboardInterrupt:
-        logger.info("🛑 Received keyboard interrupt")
+        logger.info("")
+        display_status_update("Shutdown requested by user", "INFO")
     except Exception as e:
-        logger.error(f"💥 Unexpected error: {e}")
+        display_status_update(f"Unexpected error: {e}", "ERROR")
         sys.exit(1)
     finally:
-        logger.info("👋 WhatsApp AI Assistant stopped")
+        display_status_update("WhatsApp AI Assistant stopped", "INFO")
+        logger.info("")
 
 if __name__ == "__main__":
     main() 

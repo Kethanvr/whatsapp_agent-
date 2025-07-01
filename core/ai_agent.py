@@ -23,18 +23,23 @@ class WhatsAppAIAgent:
     
     def __init__(self):
         """Initialize the AI agent with Gemini LLM"""
-        self.llm = ChatGoogleGenerativeAI(
-            model=settings.agent_model,
-            google_api_key=settings.gemini_api_key,
-            temperature=settings.agent_temperature,
-            max_tokens=settings.max_response_length
-        )
+        try:
+            self.llm = ChatGoogleGenerativeAI(
+                model=settings.agent_model,
+                google_api_key=settings.gemini_api_key,
+                temperature=settings.agent_temperature,
+                max_output_tokens=settings.max_response_length,
+                top_p=0.9,
+                top_k=40
+            )
+            logger.info(f"🧠 AI Agent initialized with model: {settings.agent_model}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize AI Agent: {e}")
+            raise e
         
         # Build LangGraph workflow
         self.workflow = self._build_workflow()
         self.app = self.workflow.compile()
-        
-        logger.info(f"AI Agent initialized with model: {settings.agent_model}")
     
     def _build_workflow(self) -> StateGraph:
         """Build the LangGraph workflow for message processing"""
@@ -92,13 +97,26 @@ class WhatsAppAIAgent:
             ]
             
             try:
+                logger.info(f"🤖 Generating response for {sender}...")
                 response = self.llm.invoke(messages)
-                state["response"] = response.content
-                logger.info(f"Generated response for {sender}: {response.content[:100]}...")
+                
+                if response and response.content:
+                    state["response"] = response.content.strip()
+                    logger.info(f"✅ Response generated: {response.content[:50]}...")
+                else:
+                    logger.warning("⚠️ Empty response from LLM")
+                    state["response"] = "I apologize, but I wasn't able to generate a proper response. Please try rephrasing your question."
                 
             except Exception as e:
-                logger.error(f"Response generation failed: {e}")
-                state["response"] = "Sorry, I'm having trouble processing your request right now. Please try again later."
+                logger.error(f"❌ Response generation failed: {str(e)}")
+                
+                # Provide helpful fallback based on error type
+                if "safety" in str(e).lower():
+                    state["response"] = "I can't provide a response to that due to safety guidelines. Please try rephrasing your question."
+                elif "quota" in str(e).lower() or "limit" in str(e).lower():
+                    state["response"] = "I'm experiencing high demand right now. Please try again in a moment."
+                else:
+                    state["response"] = "Sorry, I'm experiencing technical difficulties. Please try again later."
             
             return state
         
@@ -153,17 +171,31 @@ class WhatsAppAIAgent:
     def get_simple_response(self, query: str, sender: str = "User") -> str:
         """Simple response generation for testing/debugging"""
         try:
+            logger.info(f"🔄 Generating simple response for: {query[:30]}...")
+            
             messages = [
-                SystemMessage(content=f"You are {settings.bot_name}, a helpful AI assistant. Keep responses concise."),
+                SystemMessage(content=f"You are {settings.bot_name}, a helpful AI assistant. Keep responses concise and friendly."),
                 HumanMessage(content=query)
             ]
             
             response = self.llm.invoke(messages)
-            return response.content
+            
+            if response and response.content:
+                result = response.content.strip()
+                logger.info(f"✅ Simple response: {result[:50]}...")
+                return result
+            else:
+                logger.warning("⚠️ Empty simple response")
+                return "I apologize, but I wasn't able to generate a response. Please try again."
             
         except Exception as e:
-            logger.error(f"Simple response generation failed: {e}")
-            return "Sorry, I'm experiencing technical difficulties."
+            logger.error(f"❌ Simple response generation failed: {str(e)}")
+            
+            # Return helpful fallback
+            if "what" in query.lower() or "?" in query:
+                return "I'm sorry, I'm having technical issues and can't answer your question right now. Please try again."
+            else:
+                return "I apologize for the technical difficulties. Please try your request again."
 
 # Global agent instance
 ai_agent = WhatsAppAIAgent()

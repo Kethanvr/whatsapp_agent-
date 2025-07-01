@@ -31,9 +31,32 @@ class QnAAgent(BaseAgent):
         # Configure Gemini
         genai.configure(api_key=settings.gemini_api_key)
         
-        # Initialize the model
+        # Initialize the model with stable configuration
+        model_name = self.config.get("model", "gemini-2.0-flash")  # Use stable model
+        
+        # Safety settings to prevent blocks
+        safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH", 
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            }
+        ]
+        
         self.model = genai.GenerativeModel(
-            model_name=self.config.get("model", "gemini-2.5-flash-lite-preview-06-17")
+            model_name=model_name,
+            safety_settings=safety_settings
         )
         
         # Agent-specific configuration
@@ -50,45 +73,101 @@ class QnAAgent(BaseAgent):
         logger.info(f"🧠 {self.name} initialized with Gemini model")
     
     async def process(self, request: AgentRequest) -> AgentResponse:
-        """Process Q&A request using Gemini"""
+        """Process Q&A request using Gemini with improved error handling"""
         try:
-            # Build the conversation context
-            system_prompt = self._build_system_prompt()
-            user_message = request.message
+            user_message = request.message.strip()
             
-            # Generate response using Gemini
-            full_prompt = f"{system_prompt}\n\nUser Question: {user_message}\n\nAssistant:"
+            if not user_message:
+                raise Exception("Empty message received")
+            
+            logger.info(f"🤖 Processing: {user_message[:50]}...")
+            
+            # Create generation config
+            generation_config = genai.types.GenerationConfig(
+                temperature=self.temperature,
+                max_output_tokens=self.max_tokens,
+                candidate_count=1,  # Always 1 for consistency
+                top_p=0.9,
+                top_k=40
+            )
             
             # Use asyncio to make the synchronous call non-blocking
             response = await asyncio.get_event_loop().run_in_executor(
                 None, 
-                lambda: self.model.generate_content(
-                    full_prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=self.temperature,
-                        max_output_tokens=self.max_tokens,
-                    )
-                )
+                lambda: self._generate_content_safe(user_message, generation_config)
             )
             
-            if response and response.text:
+            if response and hasattr(response, 'text') and response.text:
+                response_text = response.text.strip()
+                
+                logger.info(f"✅ Generated response: {response_text[:50]}...")
+                
                 return AgentResponse(
                     agent_id=self.agent_id,
-                    response=response.text.strip(),
-                    confidence=0.85,  # High confidence for general Q&A
+                    response=response_text,
+                    confidence=0.85,
                     success=True,
                     metadata={
-                        "model": self.config.get("model"),
+                        "model": self.model.model_name,
                         "temperature": self.temperature,
-                        "tokens_used": len(response.text.split())
+                        "response_length": len(response_text),
+                        "tokens_used": len(response_text.split())
                     }
                 )
             else:
-                raise Exception("No response generated from Gemini")
+                logger.warning("⚠️ Empty response from Gemini")
+                raise Exception("Empty response generated from Gemini")
                 
         except Exception as e:
-            logger.error(f"❌ QnA Agent error: {str(e)}")
-            return self._create_error_response(str(e), request)
+            error_msg = str(e)
+            logger.error(f"❌ QnA Agent error: {error_msg}")
+            
+            # Create a more helpful error response
+            fallback_response = self._get_fallback_response(request.message)
+            
+            return AgentResponse(
+                agent_id=self.agent_id,
+                response=fallback_response,
+                confidence=0.1,
+                success=False,
+                error=error_msg,
+                metadata={"fallback_used": True}
+            )
+    
+    def _generate_content_safe(self, message: str, generation_config):
+        """Safely generate content with proper error handling"""
+        try:
+            # Simple prompt without complex formatting
+            prompt = f"Please answer this question clearly and helpfully: {message}"
+            
+            response = self.model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+            
+            # Check for safety blocks
+            if hasattr(response, 'prompt_feedback'):
+                if response.prompt_feedback.block_reason:
+                    logger.warning(f"⚠️ Prompt blocked: {response.prompt_feedback.block_reason}")
+                    raise Exception(f"Content blocked: {response.prompt_feedback.block_reason}")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Gemini API error: {str(e)}")
+            raise e
+    
+    def _get_fallback_response(self, message: str) -> str:
+        """Generate a fallback response when Gemini fails"""
+        message_lower = message.lower()
+        
+        if any(greet in message_lower for greet in ["hello", "hi", "hey"]):
+            return "Hello! I'm having some technical difficulties right now, but I'm here to help. Please try asking your question again."
+        
+        if "?" in message:
+            return "I'm sorry, I'm experiencing some technical issues and can't process your question right now. Please try again in a moment."
+        
+        return "I apologize, but I'm having technical difficulties at the moment. Please try your request again."
     
     def can_handle(self, message: str) -> float:
         """
