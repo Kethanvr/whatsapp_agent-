@@ -1,29 +1,58 @@
 # 🤖 WhatsApp AI Assistant
 
-A sophisticated AI-powered assistant that integrates with WhatsApp through [whatsapp-mcp](https://github.com/lharries/whatsapp-mcp), powered by Google Gemini, LangChain, and LangGraph.
+A sophisticated **multi-agent orchestration system** that connects your personal WhatsApp with specialized AI agents powered by Google Gemini 2.0 Flash. Features intelligent routing, trigger-based responses, and a comprehensive dashboard.
 
 ## 🎯 Features
 
-- **🧠 Smart AI Responses**: Powered by Google Gemini with LangChain/LangGraph
+- **🧠 Multi-Agent System**: Intelligent routing to specialized AI agents
 - **💬 WhatsApp Integration**: Works with personal and group chats via whatsapp-mcp
-- **🎛️ Trigger-Based**: Responds only when explicitly invoked (`/ask`, `@bot`, etc.)
+- **🎛️ Trigger-Based**: Responds to `!ask`, `@bot`, `@ai`, `>` commands
 - **📊 Real-time Dashboard**: Streamlit-based monitoring and testing interface
-- **🔧 Modular Architecture**: Separate microservices for easy scaling
-- **📈 Analytics**: Message processing stats and response time tracking
+- **🔧 Modular Architecture**: Easily extensible agent system
+- **📈 Analytics**: Agent performance tracking and confidence scoring
+- **🚀 Self-Invocation**: You can test the bot by messaging yourself
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│  WhatsApp-MCP   │◄──►│   AI Agent       │◄──►│   Gemini API    │
-│  (Port 3333)    │    │  (LangGraph)     │    │  (LangChain)    │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│  WhatsApp Web   │    │ Message Processor │    │ Streamlit UI    │
-│  (QR Scan)      │    │ (Polling Loop)    │    │ (Port 8501)     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+```mermaid
+graph TB
+    subgraph "WhatsApp Layer"
+        WA[WhatsApp Web]
+        QR[QR Code Authentication]
+    end
+
+    subgraph "Bridge Layer"
+        WB[Go WhatsApp Bridge<br/>Port 3334]
+        DB[(SQLite Database)]
+    end
+
+    subgraph "Orchestration Layer"
+        MP[Message Processor]
+        OR[Agent Orchestrator]
+        REG[Agent Registry]
+    end
+
+    subgraph "Agent Layer"
+        QNA[Q&A Agent<br/>Gemini 2.0]
+        AG2[Future Agent 2]
+        AG3[Future Agent 3]
+    end
+
+    subgraph "Management Layer"
+        DASH[Streamlit Dashboard<br/>Port 8503]
+        LOGS[Logging System]
+    end
+
+    WA <--> WB
+    WB <--> DB
+    WB <--> MP
+    MP <--> OR
+    OR <--> REG
+    OR <--> QNA
+    OR <--> AG2
+    OR <--> AG3
+    DASH <--> MP
+    MP --> LOGS
 ```
 
 ## 🚀 Quick Start
@@ -68,9 +97,9 @@ Edit `.env` file:
 
 ```env
 GEMINI_API_KEY=your-google-gemini-api-key-here
-MCP_SERVER_URL=http://localhost:3333
+MCP_SERVER_URL=http://localhost:3334
 BOT_NAME=AI Assistant
-BOT_TRIGGERS=/ask,@bot,!ai,>
+BOT_TRIGGERS=!ask,@bot,@ai,>
 ```
 
 ### 5. Run the Complete System
@@ -94,7 +123,7 @@ python main.py
 python run_dashboard.py
 ```
 
-Visit `http://localhost:8501` for the dashboard.
+Visit `http://localhost:8503` for the dashboard.
 
 ## 💬 Usage
 
@@ -102,21 +131,22 @@ Visit `http://localhost:8501` for the dashboard.
 
 The bot responds to these triggers:
 
-- `/ask What is AI?`
+- `!ask What is AI?`
 - `@bot Hello there`
-- `!ai How are you?`
+- `@ai How are you?`
 - `> Tell me a joke`
 
 ### Configuration Options
 
-| Setting                 | Description                         | Default           |
-| ----------------------- | ----------------------------------- | ----------------- |
-| `BOT_TRIGGERS`          | Comma-separated trigger phrases     | `/ask,@bot,!ai,>` |
-| `AUTHORIZED_NUMBERS`    | Allowed phone numbers (empty = all) | ``                |
-| `ENABLE_GROUP_CHATS`    | Allow bot in group chats            | `true`            |
-| `ENABLE_PERSONAL_CHATS` | Allow bot in personal chats         | `true`            |
-| `MAX_RESPONSE_LENGTH`   | Maximum response length             | `500`             |
-| `AGENT_TEMPERATURE`     | LLM creativity (0.0-1.0)            | `0.7`             |
+| Setting                 | Description                         | Default            |
+| ----------------------- | ----------------------------------- | ------------------ |
+| `BOT_TRIGGERS`          | Comma-separated trigger phrases     | `!ask,@bot,@ai,>`  |
+| `AUTHORIZED_NUMBERS`    | Allowed phone numbers (empty = all) | ``                 |
+| `ENABLE_GROUP_CHATS`    | Allow bot in group chats            | `true`             |
+| `ENABLE_PERSONAL_CHATS` | Allow bot in personal chats         | `true`             |
+| `AGENT_MODEL`           | AI model for responses              | `gemini-2.0-flash` |
+| `MAX_RESPONSE_LENGTH`   | Maximum response length             | `500`              |
+| `AGENT_TEMPERATURE`     | LLM creativity (0.0-1.0)            | `0.7`              |
 
 ## 📊 Dashboard Features
 
@@ -203,7 +233,7 @@ python -c "from core.whatsapp_client import whatsapp_client; print(whatsapp_clie
 **1. "Cannot connect to WhatsApp MCP server"**
 
 - Ensure the WhatsApp bridge is running: `./start_whatsapp_bridge.sh`
-- Check if bridge is accessible: `curl http://localhost:3333/health`
+- Check if bridge is accessible: `curl http://localhost:3334/health`
 - Verify WhatsApp Web authentication (scan QR code if needed)
 
 **2. "Gemini API authentication failed"**
@@ -220,7 +250,7 @@ python -c "from core.whatsapp_client import whatsapp_client; print(whatsapp_clie
 **4. "Dashboard not loading"**
 
 - Install Streamlit: `pip install streamlit`
-- Check port 8501 availability
+- Check port 8503 availability
 - Verify all dependencies are installed
 
 ### Logs

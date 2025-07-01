@@ -27,7 +27,7 @@ Your **WhatsApp AI Assistant** is a complete system with:
                                                          ▼
                                                ┌─────────────────┐
                                                │ Streamlit UI    │
-                                               │ (Port 8501)     │
+                                               │ (Port 8503)     │
                                                └─────────────────┘
 ```
 
