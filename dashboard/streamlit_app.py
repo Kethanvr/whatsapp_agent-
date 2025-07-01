@@ -339,8 +339,66 @@ def show_overview():
                 
             st.text(f"Model: {getattr(ai_agent, 'model_name', 'Unknown')}")
     
+    # Multi-Agent System Status
+    st.subheader("🎯 Multi-Agent System")
+    
+    try:
+        agent_info = message_processor.get_agent_info()
+        orchestrator_enabled = agent_info.get("orchestrator_enabled", False)
+        agents = agent_info.get("agents", [])
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if orchestrator_enabled:
+                st.success("🎯 **Orchestrator: Active**")
+                st.caption("Multi-agent routing enabled")
+            else:
+                st.warning("🔄 **Orchestrator: Fallback Mode**")
+                st.caption("Using single agent")
+        
+        with col2:
+            st.metric("🤖 Active Agents", len(agents))
+            if agents:
+                agent_names = [agent.get("name", "Unknown") for agent in agents]
+                st.caption(", ".join(agent_names))
+            else:
+                st.caption("Fallback agent only")
+        
+        with col3:
+            processor_stats = message_processor.get_stats()
+            orchestrator_responses = processor_stats.get("orchestrator_responses", 0)
+            fallback_responses = processor_stats.get("fallback_responses", 0)
+            total_ai_responses = orchestrator_responses + fallback_responses
+            
+            if total_ai_responses > 0:
+                orchestrator_percentage = (orchestrator_responses / total_ai_responses) * 100
+                st.metric("🎯 Orchestrator Usage", f"{orchestrator_percentage:.1f}%")
+                st.caption(f"{orchestrator_responses}/{total_ai_responses} responses")
+            else:
+                st.metric("🎯 Orchestrator Usage", "0%")
+                st.caption("No AI responses yet")
+        
+        # Show agent details in expandable section
+        if agents:
+            with st.expander("🤖 **Agent Details**", expanded=False):
+                for agent in agents:
+                    st.markdown(f"**{agent.get('name', 'Unknown Agent')}**")
+                    st.caption(f"ID: {agent.get('id', 'unknown')}")
+                    st.caption(f"Description: {agent.get('description', 'No description')}")
+                    
+                    capabilities = agent.get('capabilities', [])
+                    if capabilities:
+                        st.caption(f"Capabilities: {', '.join(capabilities)}")
+                    
+                    st.markdown("---")
+        
+    except Exception as e:
+        st.error(f"❌ **Orchestrator Status Error:** {str(e)}")
+        st.caption("Using fallback mode")
+    
     # Quick Stats (optimized)
-    st.subheader("📊 Quick Stats")
+    st.subheader("📊 Chat Stats")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -1012,10 +1070,34 @@ def process_traditional_send(ai_prompt, selected_chat, selected_id, recent_optio
     st.info("✅ **Message sent successfully!** You can send another message using the form above.")
 
 def show_test_interface():
-    """Show AI agent testing interface"""
-    st.header("🧪 Test AI Agent")
+    """Show AI agent testing interface with orchestrator support"""
+    st.header("🧪 Test Multi-Agent System")
     
-    st.markdown("Test your AI agent responses without sending to WhatsApp:")
+    # Show current system status
+    try:
+        agent_info = message_processor.get_agent_info()
+        orchestrator_enabled = agent_info.get("orchestrator_enabled", False)
+        agents = agent_info.get("agents", [])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if orchestrator_enabled:
+                st.success("🎯 **Orchestrator Active** - Testing multi-agent routing")
+            else:
+                st.warning("🔄 **Fallback Mode** - Using single agent")
+        
+        with col2:
+            if agents:
+                st.info(f"🤖 **{len(agents)} Agent(s) Available**")
+                for agent in agents:
+                    st.caption(f"• {agent.get('name', 'Unknown')}")
+            else:
+                st.caption("• Fallback Agent Only")
+    except:
+        st.warning("⚠️ Unable to load agent information")
+    
+    st.markdown("---")
+    st.markdown("Test your AI system responses without sending to WhatsApp:")
     
     # Test form
     with st.form("test_form"):
@@ -1036,19 +1118,67 @@ def show_test_interface():
     if submit and test_query.strip():
         with st.spinner("🤖 Generating response..."):
             start_time = time.time()
-            response = message_processor.test_ai_response(test_query)
+            
+            # Enhanced testing with orchestrator
+            try:
+                if hasattr(message_processor, 'process_web_message'):
+                    # Use async web processing for better orchestrator testing
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        result = loop.run_until_complete(
+                            message_processor.process_web_message(test_query, "test_session")
+                        )
+                        response = result.get("response", "No response")
+                        agent_used = result.get("agent_id", "unknown")
+                        confidence = result.get("confidence", 0.0)
+                        success = result.get("success", False)
+                        metadata = result.get("metadata", {})
+                    finally:
+                        loop.close()
+                else:
+                    # Fallback to original test method
+                    response = message_processor.test_ai_response(test_query)
+                    agent_used = "fallback"
+                    confidence = 0.5
+                    success = bool(response)
+                    metadata = {}
+                    
+            except Exception as e:
+                response = f"Error: {str(e)}"
+                agent_used = "error"
+                confidence = 0.0
+                success = False
+                metadata = {"error": str(e)}
+            
             processing_time = time.time() - start_time
         
-        # Display result
-        st.success("✅ Response generated!")
+        # Display enhanced result
+        if success:
+            st.success("✅ Response generated!")
+        else:
+            st.error("❌ Response generation failed!")
         
-        col1, col2 = st.columns([3, 1])
+        # Show detailed results
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
         with col1:
             st.markdown("### 🤖 AI Response:")
-            st.info(response)
+            if success:
+                st.info(response)
+            else:
+                st.error(response)
         
         with col2:
             st.metric("Processing Time", f"{processing_time:.2f}s")
+            st.metric("Confidence", f"{confidence:.2f}")
+        
+        with col3:
+            st.metric("Agent Used", agent_used)
+            if metadata:
+                with st.expander("📊 Metadata"):
+                    st.json(metadata)
     
     # Quick test buttons
     st.markdown("### 🎯 Quick Tests")

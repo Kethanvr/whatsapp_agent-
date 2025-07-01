@@ -21,4 +21,15 @@ pydantic-settings>=2.1.0
 
 # Logging and async
 loguru>=0.7.2
-asyncio-mqtt>=0.16.1 
+asyncio-mqtt>=0.16.1
+
+# === MULTI-AGENT ORCHESTRATION ===
+langchain==0.3.10
+langchain-google-genai==2.0.8
+langgraph==0.2.51
+langchain-core==0.3.25
+langsmith==0.2.15
+
+# === ADDITIONAL UTILITIES ===
+pydantic==2.10.3
+typing-extensions==4.12.2 

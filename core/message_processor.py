@@ -1,24 +1,38 @@
 """
-Message Processor - Orchestrates WhatsApp polling and AI responses
+Message Processor - Orchestrates WhatsApp polling and AI responses with Multi-Agent support
 """
 import asyncio
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 from loguru import logger
 from core.whatsapp_client import whatsapp_client, Message
 from core.ai_agent import ai_agent
+from agents.orchestrator import AgentOrchestrator
 from config.settings import settings
 from datetime import datetime
 
 class MessageProcessor:
-    """Coordinates message polling, processing, and responding"""
+    """Coordinates message polling, processing, and responding with multi-agent orchestration"""
     
     def __init__(self):
         self.is_running = False
         self.message_history: List[Dict] = []
+        
+        # Initialize orchestrator and fallback
+        try:
+            self.orchestrator = AgentOrchestrator()
+            self.use_orchestrator = True
+            logger.info("🎯 Multi-agent orchestrator initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to initialize orchestrator: {e}")
+            self.orchestrator = None
+            self.use_orchestrator = False
+        
         self.stats = {
             "total_messages_processed": 0,
             "total_responses_sent": 0,
+            "orchestrator_responses": 0,
+            "fallback_responses": 0,
             "errors": 0,
             "start_time": None
         }
@@ -93,13 +107,9 @@ class MessageProcessor:
             
             logger.info(f"🤖 Processing query: {query[:100]}...")
             
-            # Generate AI response
+            # Generate AI response using orchestrator or fallback
             start_time = time.time()
-            response = ai_agent.process_message(
-                query=query,
-                sender=message.sender,
-                chat_id=message.chat_id
-            )
+            response = self._generate_response(query, message)
             processing_time = time.time() - start_time
             
             # Send response back to WhatsApp
@@ -147,13 +157,124 @@ class MessageProcessor:
             stats["uptime_seconds"] = (datetime.now() - stats["start_time"]).total_seconds()
         return stats
     
+    def _generate_response(self, query: str, message: Message) -> str:
+        """Generate response using orchestrator or fallback"""
+        try:
+            if self.use_orchestrator and self.orchestrator:
+                # Use orchestrator for multi-agent processing
+                session_id = f"{message.chat_id}_{int(time.time())}"
+                
+                # Run async orchestrator in sync context
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    agent_response = loop.run_until_complete(
+                        self.orchestrator.process_message(query, session_id)
+                    )
+                    
+                    if agent_response.success:
+                        self.stats["orchestrator_responses"] += 1
+                        logger.info(f"🎯 Orchestrator success - Agent: {agent_response.agent_id}")
+                        return agent_response.response
+                    else:
+                        logger.warning(f"⚠️ Orchestrator failed: {agent_response.error}")
+                        return self._fallback_response(query, message)
+                        
+                finally:
+                    loop.close()
+            else:
+                # Use fallback agent
+                return self._fallback_response(query, message)
+                
+        except Exception as e:
+            logger.error(f"❌ Response generation error: {e}")
+            return self._fallback_response(query, message)
+    
+    def _fallback_response(self, query: str, message: Message) -> str:
+        """Generate response using fallback AI agent"""
+        try:
+            self.stats["fallback_responses"] += 1
+            logger.info("🔄 Using fallback AI agent")
+            
+            response = ai_agent.process_message(
+                query=query,
+                sender=message.sender,
+                chat_id=message.chat_id
+            )
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Fallback agent error: {e}")
+            return "Sorry, I'm experiencing technical difficulties. Please try again later."
+    
+    async def process_web_message(self, query: str, session_id: str) -> Dict:
+        """Process message from web interface (for Streamlit dashboard)"""
+        try:
+            if self.use_orchestrator and self.orchestrator:
+                response = await self.orchestrator.process_message(query, session_id)
+                
+                return {
+                    "success": response.success,
+                    "response": response.response,
+                    "agent_id": response.agent_id,
+                    "confidence": response.confidence,
+                    "metadata": response.metadata or {}
+                }
+            else:
+                # Fallback to original agent
+                response_text = ai_agent.get_simple_response(query, "Web User")
+                return {
+                    "success": bool(response_text),
+                    "response": response_text or "Sorry, I couldn't process your request.",
+                    "agent_id": "fallback-agent",
+                    "confidence": 0.5,
+                    "metadata": {}
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web message processing error: {e}")
+            return {
+                "success": False,
+                "response": "Sorry, I'm experiencing technical difficulties.",
+                "agent_id": "error",
+                "confidence": 0.0,
+                "metadata": {"error": str(e)}
+            }
+
     def test_ai_response(self, query: str) -> str:
         """Test AI response generation (for dashboard)"""
         try:
-            return ai_agent.get_simple_response(query, "Test User")
+            if self.use_orchestrator and self.orchestrator:
+                # Test with orchestrator
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    response = loop.run_until_complete(
+                        self.orchestrator.process_message(query, "test_session")
+                    )
+                    return response.response if response.success else f"Error: {response.error}"
+                finally:
+                    loop.close()
+            else:
+                # Test with fallback
+                return ai_agent.get_simple_response(query, "Test User")
         except Exception as e:
             logger.error(f"Test response failed: {e}")
             return f"Error: {str(e)}"
+    
+    def get_agent_info(self) -> Dict:
+        """Get information about available agents"""
+        if self.orchestrator:
+            return {
+                "orchestrator_enabled": self.use_orchestrator,
+                "agents": self.orchestrator.get_agent_info() if hasattr(self.orchestrator, 'get_agent_info') else [],
+                "fallback_available": True
+            }
+        return {
+            "orchestrator_enabled": False,
+            "agents": [],
+            "fallback_available": True
+        }
 
 # Global processor instance
 message_processor = MessageProcessor() 

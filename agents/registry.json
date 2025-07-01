@@ -1,0 +1,45 @@
+{
+  "agents": [
+    {
+      "id": "qna-chatbot",
+      "name": "Q&A Assistant",
+      "description": "General question answering and conversational AI",
+      "capabilities": [
+        "general-qa",
+        "factual-questions",
+        "explanations",
+        "definitions",
+        "reasoning"
+      ],
+      "model": "gemini-2.5-flash-lite-preview-06-17",
+      "temperature": 0.7,
+      "max_tokens": 500,
+      "enabled": true,
+      "priority": 1
+    }
+  ],
+  "routing_rules": {
+    "default_agent": "qna-chatbot",
+    "keywords": {
+      "qna-chatbot": [
+        "what",
+        "how",
+        "why",
+        "explain",
+        "define",
+        "tell me",
+        "help",
+        "question",
+        "answer",
+        "ask",
+        "info",
+        "information"
+      ]
+    }
+  },
+  "system_config": {
+    "max_retries": 3,
+    "timeout_seconds": 30,
+    "fallback_agent": "qna-chatbot"
+  }
+}
