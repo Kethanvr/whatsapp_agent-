@@ -8,6 +8,7 @@ from typing import TypedDict, Dict, Any
 from loguru import logger
 from config.settings import settings
 from datetime import datetime
+import google.generativeai as genai
 
 class AgentState(TypedDict):
     """State structure for LangGraph agent"""
@@ -24,14 +25,47 @@ class WhatsAppAIAgent:
     def __init__(self):
         """Initialize the AI agent with Gemini LLM"""
         try:
-            self.llm = ChatGoogleGenerativeAI(
-                model=settings.agent_model,
-                google_api_key=settings.gemini_api_key,
-                temperature=settings.agent_temperature,
-                max_output_tokens=settings.max_response_length,
-                top_p=0.9,
-                top_k=40
-            )
+            # Configure Google GenAI directly for 2.0+ models (more reliable)
+            genai.configure(api_key=settings.gemini_api_key)
+            
+            if "2.0" in settings.agent_model or "2.5" in settings.agent_model:
+                logger.info(f"🔧 Using direct GenAI for {settings.agent_model} with thinking disabled")
+                
+                # Use direct GenAI for simple responses (more reliable for 2.0+ models)
+                self.direct_model = genai.GenerativeModel(
+                    model_name=settings.agent_model,
+                    system_instruction="You are a helpful AI assistant. Respond directly without showing your thinking process.",
+                    safety_settings=[
+                        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
+                    ]
+                )
+                
+                # Still initialize LangChain for workflow (but prefer direct for simple responses)
+                self.llm = ChatGoogleGenerativeAI(
+                    model="gemini-1.5-flash",  # Use stable model for LangChain
+                    google_api_key=settings.gemini_api_key,
+                    temperature=settings.agent_temperature,
+                    max_output_tokens=settings.max_response_length,
+                    top_p=0.9,
+                    top_k=40
+                )
+                self.use_direct_api = True
+            else:
+                # Standard LangChain configuration for older models
+                self.llm = ChatGoogleGenerativeAI(
+                    model=settings.agent_model,
+                    google_api_key=settings.gemini_api_key,
+                    temperature=settings.agent_temperature,
+                    max_output_tokens=settings.max_response_length,
+                    top_p=0.9,
+                    top_k=40
+                )
+                self.direct_model = None
+                self.use_direct_api = False
+                
             logger.info(f"🧠 AI Agent initialized with model: {settings.agent_model}")
         except Exception as e:
             logger.error(f"❌ Failed to initialize AI Agent: {e}")
@@ -173,26 +207,58 @@ class WhatsAppAIAgent:
         try:
             logger.info(f"🔄 Generating simple response for: {query[:30]}...")
             
-            messages = [
-                SystemMessage(content=f"You are {settings.bot_name}, a helpful AI assistant. Keep responses concise and friendly."),
-                HumanMessage(content=query)
-            ]
+            # Use direct API for 2.0+ models to avoid thinking mode issues
+            if self.use_direct_api and self.direct_model:
+                logger.info("📡 Using direct GenAI API (thinking disabled)")
+                
+                generation_config = genai.types.GenerationConfig(
+                    temperature=settings.agent_temperature,
+                    max_output_tokens=settings.max_response_length,
+                    candidate_count=1,
+                    top_p=0.9,
+                    top_k=40,
+                    response_mime_type="text/plain"
+                )
+                
+                response = self.direct_model.generate_content(
+                    query,
+                    generation_config=generation_config
+                )
+                
+                if response and hasattr(response, 'text') and response.text:
+                    result = response.text.strip()
+                    logger.info(f"✅ Direct API response: {result[:50]}...")
+                    return result
+                else:
+                    logger.warning("⚠️ Empty response from direct API")
+                    return "I apologize, but I wasn't able to generate a response. Please try again."
             
-            response = self.llm.invoke(messages)
-            
-            if response and response.content:
-                result = response.content.strip()
-                logger.info(f"✅ Simple response: {result[:50]}...")
-                return result
             else:
-                logger.warning("⚠️ Empty simple response")
-                return "I apologize, but I wasn't able to generate a response. Please try again."
+                # Use LangChain for older models
+                logger.info("🔗 Using LangChain API")
+                
+                messages = [
+                    SystemMessage(content=f"You are {settings.bot_name}, a helpful AI assistant. Keep responses concise and friendly."),
+                    HumanMessage(content=query)
+                ]
+                
+                response = self.llm.invoke(messages)
+                
+                if response and response.content:
+                    result = response.content.strip()
+                    logger.info(f"✅ LangChain response: {result[:50]}...")
+                    return result
+                else:
+                    logger.warning("⚠️ Empty LangChain response")
+                    return "I apologize, but I wasn't able to generate a response. Please try again."
             
         except Exception as e:
             logger.error(f"❌ Simple response generation failed: {str(e)}")
             
-            # Return helpful fallback
-            if "what" in query.lower() or "?" in query:
+            # Return helpful fallback based on error type
+            if "thinking" in str(e).lower() or "unknown field" in str(e).lower():
+                return "I'm experiencing technical issues with the AI model. Please try again."
+            elif "what" in query.lower() or "?" in query:
                 return "I'm sorry, I'm having technical issues and can't answer your question right now. Please try again."
             else:
                 return "I apologize for the technical difficulties. Please try your request again."

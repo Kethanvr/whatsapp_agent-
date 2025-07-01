@@ -31,8 +31,8 @@ class QnAAgent(BaseAgent):
         # Configure Gemini
         genai.configure(api_key=settings.gemini_api_key)
         
-        # Initialize the model with stable configuration
-        model_name = self.config.get("model", "gemini-2.0-flash")  # Use stable model
+        # Initialize the model with thinking disabled
+        model_name = self.config.get("model", "gemini-2.0-flash")
         
         # Safety settings to prevent blocks
         safety_settings = [
@@ -54,9 +54,13 @@ class QnAAgent(BaseAgent):
             }
         ]
         
+        # System instruction to disable thinking mode
+        system_instruction = "You are a helpful AI assistant. Respond directly without showing your thinking process or reasoning steps."
+        
         self.model = genai.GenerativeModel(
             model_name=model_name,
-            safety_settings=safety_settings
+            safety_settings=safety_settings,
+            system_instruction=system_instruction
         )
         
         # Agent-specific configuration
@@ -82,13 +86,16 @@ class QnAAgent(BaseAgent):
             
             logger.info(f"🤖 Processing: {user_message[:50]}...")
             
-            # Create generation config
+            # Create generation config with thinking disabled
             generation_config = genai.types.GenerationConfig(
                 temperature=self.temperature,
                 max_output_tokens=self.max_tokens,
-                candidate_count=1,  # Always 1 for consistency
+                candidate_count=1,
                 top_p=0.9,
-                top_k=40
+                top_k=40,
+                # Disable thinking mode for 2.0+ models
+                response_schema=None,
+                response_mime_type="text/plain"
             )
             
             # Use asyncio to make the synchronous call non-blocking
