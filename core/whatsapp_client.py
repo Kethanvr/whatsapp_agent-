@@ -313,13 +313,14 @@ class WhatsAppMCPClient:
     def get_new_messages(self) -> List[Message]:
         """Poll for new messages across all chats - PRIORITIZING authorized chats"""
         new_messages = []
-        startup_grace_period = 5  # Reduced to 5 seconds
+        startup_grace_period = 2  # Reduced to 2 seconds to fix polling delay
         
         try:
+            # REMOVED: Grace period blocking to enable immediate processing
             # Skip polling for the first few seconds to avoid processing old messages
-            if time.time() - self._startup_time < startup_grace_period:
-                logger.debug(f"Skipping message polling - within grace period ({startup_grace_period}s)")
-                return []
+            # if time.time() - self._startup_time < startup_grace_period:
+            #     logger.debug(f"Skipping message polling - within grace period ({startup_grace_period}s)")
+            #     return []
             
             chats = self.get_chats()  # Now prioritizes authorized chats
             logger.debug(f"Polling {len(chats)} chats for new messages (startup: {self._startup_time})")
@@ -348,9 +349,15 @@ class WhatsAppMCPClient:
                 # Find new messages (messages after last seen)
                 chat_new_messages = []
                 for message in messages:
-                    # Skip our own messages
-                    if message.is_from_me:
-                        continue
+                    # TEMPORARY FIX: Don't skip ANY messages from authorized chats to debug FromMe issue
+                    if is_authorized_chat:
+                        logger.info(f"🔒 AUTHORIZED message - FromMe: {message.is_from_me}, Text: '{message.text[:30]}...'")
+                        # For authorized chats, process ALL messages (even if FromMe seems wrong)
+                        # This fixes the WhatsApp session confusion issue
+                    else:
+                        # Skip our own messages for non-authorized chats
+                        if message.is_from_me:
+                            continue
                     
                     # STRICT timestamp filtering - only process VERY recent messages
                     try:
