@@ -13,6 +13,8 @@ import logging
 
 from .base_agent import BaseAgent, AgentRequest, AgentResponse
 from .qna_agent import QnAAgent
+from .github_mcp_agent import GitHubMCPAgent
+from .memory_agent import MemoryStoreAgent
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +63,14 @@ class AgentOrchestrator:
                 try:
                     if config["id"] == "qna-chatbot":
                         agent = QnAAgent(config)
-                        self.agents[config["id"]] = agent
-                        logger.info(f"✅ Initialized {agent.name}")
+                    elif config["id"] == "github-mcp-controller":
+                        agent = GitHubMCPAgent(config)
+                    elif config["id"] == "memory-store":
+                        agent = MemoryStoreAgent(config)
+                    else:
+                        continue
+                    self.agents[config["id"]] = agent
+                    logger.info(f"✅ Initialized {agent.name}")
                 except Exception as e:
                     logger.error(f"Failed to initialize agent {config['id']}: {e}")
     
@@ -78,11 +86,24 @@ class AgentOrchestrator:
                     error="No agents initialized"
                 )
             
-            # Get scores from all agents
+            logger.info(f"🎯 Orchestrator processing: {message[:100]}...")
+            
+            # For simplified setup with only QnA agent, directly use it
+            if len(self.agents) == 1 and "qna-chatbot" in self.agents:
+                logger.info("📝 Using QnA chatbot directly")
+                agent = self.agents["qna-chatbot"]
+                request = AgentRequest(message=message, session_id=session_id)
+                response = await agent.process(request)
+                
+                logger.info(f"✅ QnA Agent completed with confidence: {response.confidence:.2f}")
+                return response
+            
+            # Multi-agent routing (for future expansion)
             scores = {}
             for agent_id, agent in self.agents.items():
                 try:
                     scores[agent_id] = agent.can_handle(message)
+                    logger.debug(f"Agent {agent_id} confidence: {scores[agent_id]:.2f}")
                 except Exception as e:
                     logger.error(f"Error getting confidence from {agent_id}: {e}")
                     scores[agent_id] = 0.0
@@ -90,24 +111,27 @@ class AgentOrchestrator:
             # Select best agent
             if scores:
                 best_agent_id = max(scores, key=scores.get)
+                confidence = scores[best_agent_id]
                 agent = self.agents[best_agent_id]
+                logger.info(f"🎯 Selected agent: {best_agent_id} (confidence: {confidence:.2f})")
             else:
                 # Fallback to first available agent
                 best_agent_id = list(self.agents.keys())[0]
                 agent = self.agents[best_agent_id]
+                logger.info(f"🔄 Fallback to: {best_agent_id}")
             
             # Process request
             request = AgentRequest(message=message, session_id=session_id)
             response = await agent.process(request)
             
-            logger.info(f"✅ Processed by {agent.name} (confidence: {scores.get(best_agent_id, 0.0):.2f})")
+            logger.info(f"✅ Agent {agent.name} completed successfully")
             return response
             
         except Exception as e:
             logger.error(f"❌ Orchestrator error: {e}")
             return AgentResponse(
                 agent_id="orchestrator",
-                response="Sorry, I'm having technical difficulties.",
+                response="I'm having technical difficulties. Please try again in a moment.",
                 confidence=0.0,
                 success=False,
                 error=str(e)
