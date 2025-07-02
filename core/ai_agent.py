@@ -28,43 +28,34 @@ class WhatsAppAIAgent:
             # Configure Google GenAI directly for 2.0+ models (more reliable)
             genai.configure(api_key=settings.gemini_api_key)
             
-            if "2.0" in settings.agent_model or "2.5" in settings.agent_model:
-                logger.info(f"🔧 Using direct GenAI for {settings.agent_model} with thinking disabled")
-                
-                # Use direct GenAI for simple responses (more reliable for 2.0+ models)
-                self.direct_model = genai.GenerativeModel(
-                    model_name=settings.agent_model,
-                    system_instruction="You are a helpful AI assistant. Respond directly without showing your thinking process.",
-                    safety_settings=[
-                        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
-                    ]
-                )
-                
-                # Still initialize LangChain for workflow (but prefer direct for simple responses)
-                self.llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash",  # Use stable model for LangChain
-                    google_api_key=settings.gemini_api_key,
-                    temperature=settings.agent_temperature,
-                    max_output_tokens=settings.max_response_length,
-                    top_p=0.9,
-                    top_k=40
-                )
-                self.use_direct_api = True
-            else:
-                # Standard LangChain configuration for older models
-                self.llm = ChatGoogleGenerativeAI(
-                    model=settings.agent_model,
-                    google_api_key=settings.gemini_api_key,
-                    temperature=settings.agent_temperature,
-                    max_output_tokens=settings.max_response_length,
-                    top_p=0.9,
-                    top_k=40
-                )
-                self.direct_model = None
-                self.use_direct_api = False
+            # Always use direct GenAI for gemini-2.0-flash (no thinking mode)
+            logger.info(f"🔧 Using direct GenAI for {settings.agent_model} with thinking disabled")
+            
+            # Use direct GenAI for reliable 2.0 flash responses
+            self.direct_model = genai.GenerativeModel(
+                model_name=settings.agent_model,
+                system_instruction="You are a helpful AI assistant. Provide clear, concise responses without showing your thinking process or reasoning steps.",
+                safety_settings=[
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
+                ]
+            )
+            
+            # Initialize LangChain without thinking parameters
+            self.llm = ChatGoogleGenerativeAI(
+                model=settings.agent_model,
+                google_api_key=settings.gemini_api_key,
+                temperature=settings.agent_temperature,
+                max_output_tokens=settings.max_response_length,
+                top_p=0.9,
+                top_k=40,
+                # Explicitly disable thinking mode parameters
+                thinking_budget=None,
+                include_thoughts=False
+            )
+            self.use_direct_api = True
                 
             logger.info(f"🧠 AI Agent initialized with model: {settings.agent_model}")
         except Exception as e:

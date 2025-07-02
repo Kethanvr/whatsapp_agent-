@@ -34,6 +34,7 @@ class WhatsAppMCPClient:
         self.base_url = base_url or settings.mcp_server_url
         self.session = requests.Session()
         self._last_message_ids = {}  # Track last seen message per chat
+        self._startup_time = time.time()  # Track when bot started to ignore old messages
         
     def health_check(self) -> bool:
         """Check if MCP server is reachable and connected to WhatsApp"""
@@ -223,44 +224,84 @@ class WhatsAppMCPClient:
             return []
     
     def send_message(self, chat_id: str, text: str) -> bool:
-        """Send a text message to a chat"""
-        try:
-            # Use the correct API endpoint that matches the Go bridge
-            payload = {
-                "recipient": chat_id,  # Go bridge expects "recipient"
-                "message": text        # Go bridge expects "message"
-            }
-            
-            # Use the /api/send endpoint (not /send_message)
-            response = self.session.post(
-                f"{self.base_url}/api/send",
-                json=payload
-            )
-            response.raise_for_status()
-            
-            # Check response for success
-            result = response.json()
-            success = result.get("success", False)
-            
-            if success:
-                logger.info(f"Message sent successfully to {chat_id}: {text[:50]}...")
-                return True
-            else:
-                error_msg = result.get("message", "Unknown error")
-                logger.error(f"Message sending failed: {error_msg}")
-                return False
-            
-        except Exception as e:
-            logger.error(f"Failed to send message to chat {chat_id}: {e}")
-            return False
+        """Send a text message to a chat with retry logic for timeout issues"""
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                # Use the correct API endpoint that matches the Go bridge
+                payload = {
+                    "recipient": chat_id,  # Go bridge expects "recipient"
+                    "message": text        # Go bridge expects "message"
+                }
+                
+                logger.info(f"📤 Attempt {attempt + 1}/{max_retries}: Sending to {chat_id}")
+                
+                # Use the /api/send endpoint with extended timeout
+                response = self.session.post(
+                    f"{self.base_url}/api/send",
+                    json=payload,
+                    timeout=30  # Extended timeout for WhatsApp delays
+                )
+                response.raise_for_status()
+                
+                # Check response for success
+                result = response.json()
+                success = result.get("success", False)
+                
+                if success:
+                    logger.info(f"✅ Message sent successfully to {chat_id}: {text[:50]}...")
+                    return True
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    logger.warning(f"⚠️ Attempt {attempt + 1} failed: {error_msg}")
+                    
+                    # If it's a known WhatsApp issue, retry
+                    if "timeout" in error_msg.lower() or "failed to send" in error_msg.lower():
+                        if attempt < max_retries - 1:
+                            logger.info(f"🔄 Retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            continue
+                    
+                    logger.error(f"❌ Message sending failed: {error_msg}")
+                    return False
+                
+            except requests.exceptions.Timeout:
+                logger.warning(f"⏰ Attempt {attempt + 1} timed out")
+                if attempt < max_retries - 1:
+                    logger.info(f"🔄 Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"❌ All {max_retries} attempts timed out - WhatsApp bridge issue")
+                    return False
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"🔄 Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"❌ Failed to send message to chat {chat_id}: {e}")
+                    return False
+        
+        return False
     
     def get_new_messages(self) -> List[Message]:
-        """Poll for new messages across all chats with proper deduplication"""
+        """Poll for new messages across all chats - ONLY messages after bot startup"""
         new_messages = []
+        startup_grace_period = 10  # seconds - ignore messages from first 10 seconds to avoid old messages
         
         try:
+            # Skip polling for the first few seconds to avoid processing old messages
+            if time.time() - self._startup_time < startup_grace_period:
+                logger.debug(f"Skipping message polling - within grace period ({startup_grace_period}s)")
+                return []
+            
             chats = self.get_chats()
-            logger.debug(f"Polling {len(chats)} chats for new messages...")
+            logger.debug(f"Polling {len(chats)} chats for new messages (startup: {self._startup_time})")
             
             for chat in chats:
                 # Skip based on chat type preferences
@@ -269,7 +310,8 @@ class WhatsAppMCPClient:
                 if not chat.is_group and not settings.enable_personal_chats:
                     continue
                 
-                messages = self.get_messages(chat.id, limit=3)
+                # Get recent messages (limit to 2 to avoid processing old history)
+                messages = self.get_messages(chat.id, limit=2)
                 
                 # Skip if no messages
                 if not messages:
@@ -285,16 +327,33 @@ class WhatsAppMCPClient:
                     if message.is_from_me:
                         continue
                     
-                    # If this is the first time seeing this chat, only process the latest message
+                    # CRITICAL: Parse message timestamp and check if it's after startup
+                    try:
+                        # Parse ISO timestamp from message
+                        from datetime import datetime
+                        message_time = datetime.fromisoformat(message.timestamp.replace('Z', '+00:00'))
+                        message_timestamp = message_time.timestamp()
+                        
+                        # Only process messages that arrived AFTER bot startup
+                        if message_timestamp < self._startup_time:
+                            logger.debug(f"Skipping old message from {message.sender}: {message.text[:30]}...")
+                            continue
+                            
+                    except Exception as e:
+                        logger.warning(f"Could not parse timestamp for message {message.id}: {e}")
+                        # If timestamp parsing fails, use last_seen logic as fallback
+                    
+                    # If this is the first time seeing this chat
                     if last_seen is None:
-                        # Only add the most recent message on first run
-                        if message == messages[0]:  # Most recent message
-                            chat_new_messages.append(message)
-                        break
+                        # Mark this message as seen but don't process it (could be old)
+                        self._last_message_ids[chat.id] = message.id
+                        logger.debug(f"First time seeing chat {chat.id}, marking as seen but not processing")
+                        continue
                     
                     # For existing chats, process all messages newer than last seen
                     if message.id != last_seen:
                         chat_new_messages.append(message)
+                        logger.debug(f"New message from {message.sender}: {message.text[:30]}...")
                     else:
                         # Found the last seen message, stop here
                         break
@@ -310,7 +369,7 @@ class WhatsAppMCPClient:
             logger.error(f"Error polling for new messages: {e}")
         
         if new_messages:
-            logger.info(f"Found {len(new_messages)} new message(s)")
+            logger.info(f"Found {len(new_messages)} NEW message(s) (ignoring old history)")
         
         return new_messages
     
@@ -329,10 +388,29 @@ class WhatsAppMCPClient:
             
         # Check authorization if configured
         if settings.authorized_number_list:
-            if message.sender not in settings.authorized_number_list:
+            # Normalize phone numbers for comparison (handle +prefix and no prefix)
+            sender_normalized = message.sender.strip()
+            if sender_normalized.startswith('+'):
+                sender_normalized = sender_normalized[1:]  # Remove + prefix
+            
+            # Check if sender matches any authorized number (with or without + prefix)
+            is_authorized = False
+            for auth_number in settings.authorized_number_list:
+                auth_normalized = auth_number.strip()
+                if auth_normalized.startswith('+'):
+                    auth_normalized = auth_normalized[1:]  # Remove + prefix
+                
+                if sender_normalized == auth_normalized:
+                    is_authorized = True
+                    break
+            
+            if not is_authorized:
                 if not is_group:
-                    logger.info(f"❌ Message rejected: sender {message.sender} not in authorized list")
+                    logger.info(f"❌ Message rejected: sender {message.sender} not in authorized list {settings.authorized_number_list}")
                 return False
+            else:
+                if not is_group:
+                    logger.info(f"✅ Message authorized: sender {message.sender} matches authorized list")
         
         # STRICT: Only respond to explicit triggers - NO automatic responses
         for trigger in settings.trigger_list:

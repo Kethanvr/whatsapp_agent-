@@ -31,8 +31,8 @@ class QnAAgent(BaseAgent):
         # Configure Gemini
         genai.configure(api_key=settings.gemini_api_key)
         
-        # Initialize the model with thinking disabled
-        model_name = self.config.get("model", "gemini-2.0-flash")
+        # Initialize gemini-2.0-flash model without thinking mode
+        model_name = "gemini-2.0-flash"  # Force gemini-2.0-flash
         
         # Safety settings to prevent blocks
         safety_settings = [
@@ -54,8 +54,8 @@ class QnAAgent(BaseAgent):
             }
         ]
         
-        # System instruction to disable thinking mode
-        system_instruction = "You are a helpful AI assistant. Respond directly without showing your thinking process or reasoning steps."
+        # System instruction optimized for WhatsApp responses without thinking mode
+        system_instruction = "You are a helpful WhatsApp AI assistant. Provide clear, concise responses without showing your thinking process. Keep responses under 300 characters when possible."
         
         self.model = genai.GenerativeModel(
             model_name=model_name,
