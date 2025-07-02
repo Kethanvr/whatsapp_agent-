@@ -419,7 +419,7 @@ class WhatsAppMCPClient:
         return new_messages
     
     def is_message_triggered(self, message: Message) -> bool:
-        """Check if message should trigger bot response - STRICT TRIGGER ONLY"""
+        """Check if message should trigger bot response - FLEXIBLE TRIGGER MATCHING"""
         text = message.text.strip()
         text_lower = text.lower()
         
@@ -428,7 +428,7 @@ class WhatsAppMCPClient:
         
         if not is_group:
             # Debug logging for personal chats
-            logger.info(f"🔍 Checking STRICT trigger for: '{message.text}' from {message.sender}")
+            logger.info(f"🔍 Checking FLEXIBLE trigger for: '{message.text}' from {message.sender}")
             logger.info(f"🔍 Available triggers: {settings.trigger_list}")
             
         # Check authorization if configured
@@ -457,30 +457,59 @@ class WhatsAppMCPClient:
                 if not is_group:
                     logger.info(f"✅ Message authorized: sender {message.sender} matches authorized list")
         
-        # STRICT: Only respond to explicit triggers - NO automatic responses
+        # FLEXIBLE TRIGGER MATCHING - much more lenient
         for trigger in settings.trigger_list:
             trigger_lower = trigger.lower()
             if not is_group:
                 logger.info(f"🔍 Checking trigger: '{trigger}' against text: '{text_lower}'")
             
-            # Check if message starts with the trigger
-            if text_lower.startswith(trigger_lower):
+            # FLEXIBLE MATCHING OPTIONS:
+            # 1. Exact match: "!ask" == "!ask"
+            if text_lower == trigger_lower:
                 if not is_group:
-                    logger.info(f"✅ Trigger '{trigger}' matched at start!")
-                else:
-                    logger.info(f"✅ Group trigger '{trigger}' matched in {message.chat_id}")
+                    logger.info(f"✅ EXACT MATCH: '{trigger}' == '{text_lower}'")
                 return True
             
-            # Also check for trigger with space after it
+            # 2. Starts with trigger + space: "!ask hello" starts with "!ask "
             if text_lower.startswith(trigger_lower + " "):
                 if not is_group:
-                    logger.info(f"✅ Trigger '{trigger}' matched with space!")
-                else:
-                    logger.info(f"✅ Group trigger '{trigger}' matched with space in {message.chat_id}")
+                    logger.info(f"✅ START MATCH: '{text_lower}' starts with '{trigger} '")
+                return True
+            
+            # 3. Starts with trigger: "@askme" starts with "@ask" (for @ai)
+            if text_lower.startswith(trigger_lower):
+                if not is_group:
+                    logger.info(f"✅ PREFIX MATCH: '{text_lower}' starts with '{trigger}'")
+                return True
+            
+            # 4. Contains trigger as word: "hey !ask me" contains "!ask"
+            if f" {trigger_lower} " in text_lower or f" {trigger_lower}" == text_lower[-len(trigger_lower)-1:]:
+                if not is_group:
+                    logger.info(f"✅ WORD MATCH: '{text_lower}' contains '{trigger}' as word")
                 return True
         
-        # REMOVED: No automatic greeting or question detection
-        # Only explicit triggers will work now
+        # SPECIAL FLEXIBLE PATTERNS for common variations
+        # Handle common @ask, @ai, @bot variations
+        if text_lower.startswith('@'):
+            for pattern in ['@ask', '@ai', '@bot']:
+                if pattern in text_lower:
+                    if not is_group:
+                        logger.info(f"✅ @ PATTERN MATCH: '{text_lower}' contains '{pattern}'")
+                    return True
+        
+        # Handle common !ask, !ai, !bot variations  
+        if text_lower.startswith('!'):
+            for pattern in ['!ask', '!ai', '!bot']:
+                if pattern in text_lower:
+                    if not is_group:
+                        logger.info(f"✅ ! PATTERN MATCH: '{text_lower}' contains '{pattern}'")
+                    return True
+        
+        # Handle '>' trigger anywhere in message
+        if '>' in text_lower:
+            if not is_group:
+                logger.info(f"✅ > PATTERN MATCH: '{text_lower}' contains '>'")
+            return True
         
         if not is_group:
             logger.info(f"❌ No triggers matched - ignoring message: '{text_lower}'")
