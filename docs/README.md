@@ -34,8 +34,8 @@ graph TB
 
     subgraph "Agent Layer"
         QNA[Q&A Agent<br/>Gemini 2.0]
-        AG2[Future Agent 2]
-        AG3[Future Agent 3]
+        GH[GitHub MCP Agent]
+        MEM[Memory Store Agent]
     end
 
     subgraph "Management Layer"
@@ -49,8 +49,8 @@ graph TB
     MP <--> OR
     OR <--> REG
     OR <--> QNA
-    OR <--> AG2
-    OR <--> AG3
+    OR <--> GH
+    OR <--> MEM
     DASH <--> MP
     MP --> LOGS
 ```

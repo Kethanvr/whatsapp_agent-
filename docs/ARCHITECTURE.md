@@ -32,11 +32,11 @@ graph TB
 
     subgraph "Agent Layer"
         QA[Q&A Agent]
-        AG2[Future Agent 2]
-        AG3[Future Agent 3]
+        GH[GitHub MCP Agent]
+        MEM[Memory Store Agent]
         OR --> QA
-        OR --> AG2
-        OR --> AG3
+        OR --> GH
+        OR --> MEM
     end
 
     subgraph "AI Layer"
@@ -126,7 +126,10 @@ sequenceDiagram
 
 ### **4. Agent Layer**
 
-- **Current Agents**: Q&A Agent (Gemini 2.0 Flash)
+- **Current Agents**:
+  - Q&A Agent (Gemini 2.0 Flash)
+  - GitHub MCP Agent (repository operations)
+  - Memory Store Agent (long-term memory)
 - **Technology**: Direct GenAI API + LangChain fallback
 - **Purpose**: Specialized AI responses
 - **Key Files**: `agents/qna_agent.py`

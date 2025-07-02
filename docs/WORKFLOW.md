@@ -1,4 +1,4 @@
-# ��� WhatsApp AI Assistant - Workflow Documentation
+# ��� WhatsApp AI Assistant - Workflow Documentation
 
 ## Message Processing Workflow
 
@@ -20,7 +20,7 @@ flowchart TD
     N --> O[Send back to Message Processor]
     O --> P[Send via Bridge API]
     P --> Q[User receives response in WhatsApp]
-    
+
     style G fill:#e1f5fe
     style H fill:#f3e5f5
     style L fill:#e8f5e8
@@ -38,12 +38,12 @@ flowchart LR
     B -->|@ai| E[Extract query after '@ai']
     B -->|>| F[Extract query after '>']
     B -->|No trigger| G[Ignore message]
-    
+
     C --> H[Route to Orchestrator]
     D --> H
     E --> H
     F --> H
-    
+
     style B fill:#fff3e0
     style H fill:#e1f5fe
 ```
@@ -62,7 +62,7 @@ flowchart TD
     G --> H{Confidence > 0.5?}
     H -->|Yes| I[Route to selected agent]
     H -->|No| J[Use default Q&A agent]
-    
+
     style G fill:#e1f5fe
     style I fill:#e8f5e8
     style J fill:#fff3e0
@@ -80,11 +80,13 @@ sequenceDiagram
     participant CodeAgent as Code Agent
     participant SearchAgent as Search Agent
     participant Gemini as Gemini API
-    
+    participant GitHub as GitHubMCPAgent
+    participant Memory as MemoryStoreAgent
+
     User->>Bridge: !ask What is Python?
     Bridge->>Processor: Poll for new messages
     Processor->>Orchestrator: Route message
-    
+
     par Agent Confidence Scoring
         Orchestrator->>QnA: can_handle("What is Python?")
         QnA-->>Orchestrator: confidence: 0.85
@@ -92,10 +94,16 @@ sequenceDiagram
         Orchestrator->>CodeAgent: can_handle("What is Python?")
         CodeAgent-->>Orchestrator: confidence: 0.90
     and
-        Orchestrator->>SearchAgent: can_handle("What is Python?") 
+        Orchestrator->>SearchAgent: can_handle("What is Python?")
         SearchAgent-->>Orchestrator: confidence: 0.40
+    and
+        Orchestrator->>GitHub: can_handle("What is Python?")
+        GitHub-->>Orchestrator: confidence: 0.75
+    and
+        Orchestrator->>Memory: can_handle("What is Python?")
+        Memory-->>Orchestrator: confidence: 0.60
     end
-    
+
     Orchestrator->>CodeAgent: process(message) [highest confidence]
     CodeAgent->>Gemini: Generate code-focused response
     Gemini-->>CodeAgent: Python programming language explanation
@@ -123,7 +131,7 @@ flowchart TD
     L -->|No| M[Retry connection]
     L -->|Yes| N[Start polling loop]
     N --> O[System ready - processing messages]
-    
+
     style G fill:#e1f5fe
     style I fill:#e8f5e8
     style O fill:#4caf50,color:#ffffff
@@ -142,11 +150,11 @@ flowchart LR
     F -->|Yes| H[Load recent messages]
     H --> I[Display agent statistics]
     I --> J[Enable message sending]
-    
+
     J --> K[User sends test message]
     K --> L[Route through orchestrator]
     L --> M[Display response]
-    
+
     style H fill:#e1f5fe
     style J fill:#e8f5e8
     style M fill:#4caf50,color:#ffffff
@@ -161,14 +169,14 @@ flowchart TD
     B -->|Agent processing| D[Use fallback response]
     B -->|Gemini API| E[Switch to LangChain fallback]
     B -->|Configuration| F[Log error and exit]
-    
+
     C --> G{Retry successful?}
     G -->|Yes| H[Resume normal operation]
     G -->|No| I[Show connection guide]
-    
+
     D --> J[Generate helpful error message]
     E --> K[Continue with alternative model]
-    
+
     style J fill:#fff3e0
     style H fill:#4caf50,color:#ffffff
     style I fill:#ff9800,color:#ffffff
@@ -187,7 +195,7 @@ flowchart LR
     F -->|Yes| H[Load agent registry.json]
     H --> I[Validate agent configurations]
     I --> J[Initialize system with settings]
-    
+
     style E fill:#fff3e0
     style J fill:#4caf50,color:#ffffff
     style G fill:#f44336,color:#ffffff
@@ -196,13 +204,15 @@ flowchart LR
 ## Message Types and Routing
 
 ### Personal Chat Messages
+
 ```
 Format: !ask [query]
 Example: "!ask What is machine learning?"
 Flow: User → Bridge → Processor → Orchestrator → Agent → Response
 ```
 
-### Group Chat Messages  
+### Group Chat Messages
+
 ```
 Format: @bot [query] or @ai [query]
 Example: "@bot Explain quantum computing"
@@ -210,6 +220,7 @@ Flow: Group → Bridge → Processor → Orchestrator → Agent → Group
 ```
 
 ### Dashboard Messages
+
 ```
 Format: Direct input via web interface
 Flow: Dashboard → Orchestrator → Agent → Dashboard display
@@ -229,7 +240,7 @@ flowchart TD
     H --> I{Response within timeout?}
     I -->|No| J[Return timeout message]
     I -->|Yes| K[Return agent response]
-    
+
     style E fill:#e1f5fe
     style F fill:#f3e5f5
     style H fill:#fff3e0
@@ -243,16 +254,16 @@ flowchart LR
     B --> C{Console logging enabled?}
     C -->|Yes| D[Format for console with colors]
     C -->|No| E[Skip console output]
-    
+
     D --> F[Display in terminal]
     E --> G{File logging enabled?}
     G -->|Yes| H[Write to daily log file]
     G -->|No| I[Skip file logging]
-    
+
     F --> G
     H --> J[Rotate logs daily]
     J --> K[Retain logs for 7 days]
-    
+
     style F fill:#e1f5fe
     style H fill:#e8f5e8
     style K fill:#fff3e0
