@@ -7,7 +7,12 @@ from typing import Dict, List, Optional, Set
 from loguru import logger
 from core.whatsapp_client import whatsapp_client, Message
 from core.ai_agent import ai_agent
-from agents.orchestrator import AgentOrchestrator
+try:
+    from agents.enhanced_orchestrator import EnhancedAgentOrchestrator
+    ENHANCED_ORCHESTRATOR_AVAILABLE = True
+except ImportError:
+    from agents.orchestrator import AgentOrchestrator
+    ENHANCED_ORCHESTRATOR_AVAILABLE = False
 from config.settings import settings
 from datetime import datetime
 
@@ -22,9 +27,13 @@ class MessageProcessor:
         
         # Initialize orchestrator and fallback
         try:
-            self.orchestrator = AgentOrchestrator()
+            if ENHANCED_ORCHESTRATOR_AVAILABLE:
+                self.orchestrator = EnhancedAgentOrchestrator()
+                logger.info("🚀 Enhanced multi-agent orchestrator initialized")
+            else:
+                self.orchestrator = AgentOrchestrator()
+                logger.info("🎯 Standard multi-agent orchestrator initialized")
             self.use_orchestrator = True
-            logger.info("🎯 Multi-agent orchestrator initialized")
         except Exception as e:
             logger.warning(f"⚠️ Failed to initialize orchestrator: {e}")
             self.orchestrator = None
