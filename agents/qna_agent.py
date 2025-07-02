@@ -84,41 +84,64 @@ class QnAAgent(BaseAgent):
             if not user_message:
                 raise Exception("Empty message received")
             
-            logger.info(f"🤖 Processing: {user_message[:50]}...")
+            logger.info(f"🤖 QnA Agent processing: {user_message[:100]}...")
             
-            # Create generation config with thinking disabled
+            # Create generation config optimized for WhatsApp responses
             generation_config = genai.types.GenerationConfig(
                 temperature=self.temperature,
                 max_output_tokens=self.max_tokens,
                 candidate_count=1,
                 top_p=0.9,
-                top_k=40,
-                # Disable thinking mode for 2.0+ models
-                response_schema=None,
-                response_mime_type="text/plain"
+                top_k=40
             )
+            
+            # Create focused prompt for concise WhatsApp responses
+            prompt = f"""Answer this question clearly and concisely for WhatsApp messaging.
+
+Question: {user_message}
+
+Requirements:
+- Keep response under 300 characters
+- Be direct and helpful
+- Use simple language
+- Provide specific information
+
+Answer:"""
             
             # Use asyncio to make the synchronous call non-blocking
             response = await asyncio.get_event_loop().run_in_executor(
                 None, 
-                lambda: self._generate_content_safe(user_message, generation_config)
+                lambda: self._generate_content_safe(prompt, generation_config)
             )
             
             if response and hasattr(response, 'text') and response.text:
                 response_text = response.text.strip()
                 
-                logger.info(f"✅ Generated response: {response_text[:50]}...")
+                # Ensure response is concise for WhatsApp
+                if len(response_text) > 400:
+                    # Truncate to first complete sentence under 400 chars
+                    sentences = response_text.split('. ')
+                    truncated = sentences[0]
+                    for sentence in sentences[1:]:
+                        if len(truncated + '. ' + sentence) <= 350:
+                            truncated += '. ' + sentence
+                        else:
+                            break
+                    response_text = truncated + ('.' if not truncated.endswith('.') else '')
+                
+                logger.info(f"✅ QnA response generated: {response_text[:50]}...")
                 
                 return AgentResponse(
                     agent_id=self.agent_id,
                     response=response_text,
-                    confidence=0.85,
+                    confidence=0.9,
                     success=True,
                     metadata={
                         "model": self.model.model_name,
                         "temperature": self.temperature,
                         "response_length": len(response_text),
-                        "tokens_used": len(response_text.split())
+                        "tokens_used": len(response_text.split()),
+                        "truncated": len(response.text) > len(response_text)
                     }
                 )
             else:
@@ -141,12 +164,9 @@ class QnAAgent(BaseAgent):
                 metadata={"fallback_used": True}
             )
     
-    def _generate_content_safe(self, message: str, generation_config):
+    def _generate_content_safe(self, prompt: str, generation_config):
         """Safely generate content with proper error handling"""
         try:
-            # Simple prompt without complex formatting
-            prompt = f"Please answer this question clearly and helpfully: {message}"
-            
             response = self.model.generate_content(
                 prompt,
                 generation_config=generation_config
@@ -168,13 +188,13 @@ class QnAAgent(BaseAgent):
         """Generate a fallback response when Gemini fails"""
         message_lower = message.lower()
         
-        if any(greet in message_lower for greet in ["hello", "hi", "hey"]):
-            return "Hello! I'm having some technical difficulties right now, but I'm here to help. Please try asking your question again."
+        if any(greet in message_lower for greet in ["hello", "hi", "hey", "good morning", "good evening"]):
+            return "Hi! I'm here to help answer your questions. What would you like to know?"
         
-        if "?" in message:
-            return "I'm sorry, I'm experiencing some technical issues and can't process your question right now. Please try again in a moment."
+        if any(question in message_lower for question in ["what", "how", "why", "when", "where", "who"]):
+            return f"I'd love to help answer your question about '{message[:50]}...' but I'm experiencing technical issues. Please try again."
         
-        return "I apologize, but I'm having technical difficulties at the moment. Please try your request again."
+        return "I'm here to help! Please ask me any question and I'll do my best to provide a helpful answer."
     
     def can_handle(self, message: str) -> float:
         """

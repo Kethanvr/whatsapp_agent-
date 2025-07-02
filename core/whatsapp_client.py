@@ -255,7 +255,7 @@ class WhatsAppMCPClient:
             return False
     
     def get_new_messages(self) -> List[Message]:
-        """Poll for new messages across all chats"""
+        """Poll for new messages across all chats with proper deduplication"""
         new_messages = []
         
         try:
@@ -275,20 +275,35 @@ class WhatsAppMCPClient:
                 if not messages:
                     continue
                 
-                # Filter for new messages only
+                # Get last seen message ID for this chat
+                last_seen = self._last_message_ids.get(chat.id)
+                
+                # Find new messages (messages after last seen)
+                chat_new_messages = []
                 for message in messages:
                     # Skip our own messages
                     if message.is_from_me:
                         continue
                     
-                    # Check if this is a new message
-                    last_seen = self._last_message_ids.get(chat.id)
-                    if last_seen is None or message.id != last_seen:
-                        new_messages.append(message)
-                        break  # Only take the most recent new message per chat
+                    # If this is the first time seeing this chat, only process the latest message
+                    if last_seen is None:
+                        # Only add the most recent message on first run
+                        if message == messages[0]:  # Most recent message
+                            chat_new_messages.append(message)
+                        break
+                    
+                    # For existing chats, process all messages newer than last seen
+                    if message.id != last_seen:
+                        chat_new_messages.append(message)
+                    else:
+                        # Found the last seen message, stop here
+                        break
+                
+                # Add new messages from this chat
+                new_messages.extend(chat_new_messages)
                         
-                # Update last seen message ID
-                if messages:
+                # Update last seen message ID to the most recent message
+                if messages and not messages[0].is_from_me:
                     self._last_message_ids[chat.id] = messages[0].id
                     
         except Exception as e:
@@ -300,57 +315,86 @@ class WhatsAppMCPClient:
         return new_messages
     
     def is_message_triggered(self, message: Message) -> bool:
-        """Check if message should trigger bot response"""
-        text = message.text.lower().strip()
+        """Check if message should trigger bot response - STRICT TRIGGER ONLY"""
+        text = message.text.strip()
+        text_lower = text.lower()
         
         # Check if it's a group message (reduce log noise)
         is_group = "@g.us" in message.chat_id
         
-        if is_group:
-            # Minimal logging for group messages to reduce noise
-            logger.debug(f"📱 Group message from {message.sender}: {message.text[:50]}...")
-        else:
+        if not is_group:
             # Debug logging for personal chats
-            logger.info(f"🔍 Checking trigger for message: '{message.text}' from {message.sender}")
-            logger.info(f"🔍 Processed text: '{text}'")
+            logger.info(f"🔍 Checking STRICT trigger for: '{message.text}' from {message.sender}")
             logger.info(f"🔍 Available triggers: {settings.trigger_list}")
-            logger.info(f"🔍 Auth numbers: {settings.authorized_number_list}")
-        
+            
         # Check authorization if configured
         if settings.authorized_number_list:
             if message.sender not in settings.authorized_number_list:
-                if not is_group:  # Only log rejections for personal chats
+                if not is_group:
                     logger.info(f"❌ Message rejected: sender {message.sender} not in authorized list")
                 return False
         
-        # Check if message contains any trigger
+        # STRICT: Only respond to explicit triggers - NO automatic responses
         for trigger in settings.trigger_list:
-            if not is_group:  # Only log trigger checks for personal chats
-                logger.info(f"🔍 Checking trigger: '{trigger}' against text: '{text}'")
+            trigger_lower = trigger.lower()
+            if not is_group:
+                logger.info(f"🔍 Checking trigger: '{trigger}' against text: '{text_lower}'")
             
-            if trigger.lower() in text:
+            # Check if message starts with the trigger
+            if text_lower.startswith(trigger_lower):
                 if not is_group:
-                    logger.info(f"✅ Trigger '{trigger}' matched!")
+                    logger.info(f"✅ Trigger '{trigger}' matched at start!")
                 else:
                     logger.info(f"✅ Group trigger '{trigger}' matched in {message.chat_id}")
                 return True
+            
+            # Also check for trigger with space after it
+            if text_lower.startswith(trigger_lower + " "):
+                if not is_group:
+                    logger.info(f"✅ Trigger '{trigger}' matched with space!")
+                else:
+                    logger.info(f"✅ Group trigger '{trigger}' matched with space in {message.chat_id}")
+                return True
+        
+        # REMOVED: No automatic greeting or question detection
+        # Only explicit triggers will work now
         
         if not is_group:
-            logger.info(f"❌ No triggers matched for: '{text}'")
+            logger.info(f"❌ No triggers matched - ignoring message: '{text_lower}'")
         
         return False
     
     def extract_query_from_message(self, message: Message) -> str:
         """Extract the actual query from a triggered message"""
         text = message.text.strip()
+        original_text = text
+        
+        logger.info(f"🔧 Extracting query from: '{text}'")
         
         # Remove trigger prefixes
         for trigger in settings.trigger_list:
-            if text.lower().startswith(trigger.lower()):
-                text = text[len(trigger):].strip()
+            trigger_lower = trigger.lower()
+            text_lower = text.lower()
+            
+            # Check if starts with trigger
+            if text_lower.startswith(trigger_lower):
+                # Remove the trigger and any following whitespace
+                if text_lower.startswith(trigger_lower + " "):
+                    text = text[len(trigger) + 1:].strip()
+                else:
+                    text = text[len(trigger):].strip()
+                logger.info(f"🔧 Removed trigger '{trigger}', remaining: '{text}'")
                 break
         
-        return text if text else message.text
+        # If no query remains after trigger removal, return original text
+        if not text or text.lower() == original_text.lower():
+            # For greetings and questions without triggers, return as-is
+            result = original_text
+        else:
+            result = text
+        
+        logger.info(f"🔧 Final extracted query: '{result}'")
+        return result
     
     def find_contact_by_name(self, search_name: str) -> List[ChatInfo]:
         """Find contacts by name (fuzzy search)"""
