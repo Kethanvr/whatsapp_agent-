@@ -352,34 +352,33 @@ class WhatsAppMCPClient:
                     if message.is_from_me:
                         continue
                     
-                    # For authorized chats, be more lenient with timestamp filtering
-                    if is_authorized_chat:
-                        # More lenient timestamp check for authorized numbers
-                        message_age_minutes = (time.time() - self._startup_time) / 60
-                        if message_age_minutes > 30:  # Only skip if very old (30+ minutes)
-                            try:
-                                from datetime import datetime
-                                message_time = datetime.fromisoformat(message.timestamp.replace('Z', '+00:00'))
-                                message_timestamp = message_time.timestamp()
-                                
-                                # For authorized chats, allow messages from last 10 minutes
-                                if message_timestamp < (time.time() - 600):  # 10 minutes ago
-                                    logger.debug(f"Skipping very old message from {message.sender}: {message.text[:30]}...")
-                                    continue
-                            except Exception:
-                                pass  # If timestamp parsing fails, process the message
-                    else:
-                        # Strict timestamp check for non-authorized chats
-                        try:
-                            from datetime import datetime
-                            message_time = datetime.fromisoformat(message.timestamp.replace('Z', '+00:00'))
-                            message_timestamp = message_time.timestamp()
+                    # STRICT timestamp filtering - only process VERY recent messages
+                    try:
+                        from datetime import datetime
+                        message_time = datetime.fromisoformat(message.timestamp.replace('Z', '+00:00'))
+                        message_timestamp = message_time.timestamp()
+                        current_time = time.time()
+                        
+                        # Only process messages from the last 2 minutes (120 seconds)
+                        if message_timestamp < (current_time - 120):
+                            logger.debug(f"Skipping old message from {message.sender}: {message.text[:30]}... (age: {(current_time - message_timestamp)/60:.1f} min)")
+                            continue
+                        
+                        # Also skip if message is from before bot startup (with small grace period)
+                        if message_timestamp < (self._startup_time - 30):  # 30 sec grace period
+                            logger.debug(f"Skipping pre-startup message from {message.sender}: {message.text[:30]}...")
+                            continue
                             
-                            if message_timestamp < self._startup_time:
-                                logger.debug(f"Skipping old message from {message.sender}: {message.text[:30]}...")
-                                continue
-                        except Exception:
-                            pass
+                        # Log that we're processing this recent message
+                        age_seconds = current_time - message_timestamp
+                        if is_authorized_chat:
+                            logger.info(f"🔒 Processing RECENT authorized message (age: {age_seconds:.1f}s): {message.text[:30]}...")
+                        else:
+                            logger.debug(f"Processing recent message (age: {age_seconds:.1f}s): {message.text[:30]}...")
+                        
+                    except Exception as e:
+                        logger.warning(f"Could not parse timestamp for message {message.id}: {e} - skipping")
+                        continue
                     
                     # If this is the first time seeing this chat
                     if last_seen is None:
