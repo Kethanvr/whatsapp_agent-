@@ -2,20 +2,27 @@
   "agents": [
     {
       "id": "qna-chatbot",
-      "name": "Q&A Assistant",
-      "description": "General question answering and conversational AI",
+      "name": "WhatsApp Q&A Assistant",
+      "description": "Concise question answering for WhatsApp messages",
       "capabilities": [
         "general-qa",
         "factual-questions",
         "explanations",
         "definitions",
-        "reasoning"
+        "reasoning",
+        "whatsapp-responses"
       ],
       "model": "gemini-2.0-flash",
       "temperature": 0.7,
-      "max_tokens": 500,
+      "max_tokens": 300,
       "enabled": true,
-      "priority": 1
+      "priority": 1,
+      "response_format": {
+        "style": "concise",
+        "max_paragraphs": 3,
+        "use_bullet_points": true,
+        "whatsapp_friendly": true
+      }
     }
   ],
   "routing_rules": {
@@ -33,13 +40,22 @@
         "answer",
         "ask",
         "info",
-        "information"
+        "information",
+        "hi",
+        "hello",
+        "hey"
       ]
     }
   },
   "system_config": {
     "max_retries": 3,
     "timeout_seconds": 30,
-    "fallback_agent": "qna-chatbot"
+    "fallback_agent": "qna-chatbot",
+    "response_guidelines": {
+      "prefer_short_answers": true,
+      "max_response_length": 300,
+      "use_emojis": false,
+      "format_for_mobile": true
+    }
   }
 }
