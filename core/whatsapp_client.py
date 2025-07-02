@@ -78,40 +78,61 @@ class WhatsAppMCPClient:
             return {"connected": False, "message": str(e)}
 
     def get_chats(self, limit: int = 50) -> List[ChatInfo]:
-        """Get all available chats with optional limit for performance"""
+        """Get all available chats with PRIORITY for authorized numbers"""
         try:
-            # Add limit parameter to reduce data fetching
-            params = {"limit": limit} if limit else {}
-            response = self.session.get(f"{self.base_url}/chats", params=params)
+            # Get ALL chats first (no limit to find authorized numbers)
+            response = self.session.get(f"{self.base_url}/chats")
             response.raise_for_status()
             
-            chats = []
             chat_data_list = response.json()
             
-            # Limit processing if too many chats
-            if len(chat_data_list) > limit:
-                chat_data_list = chat_data_list[:limit]
-                logger.info(f"Limited chat processing to {limit} chats for performance")
+            # Separate authorized and other chats
+            authorized_chats = []
+            other_chats = []
             
             for chat_data in chat_data_list:
-                # Better contact name resolution
-                name = chat_data.get("name", "Unknown")
                 chat_id = chat_data["id"]
                 
-                # Quick name resolution without expensive operations
+                # Check if this chat belongs to an authorized number
+                is_authorized_chat = False
+                if settings.authorized_number_list:
+                    for auth_number in settings.authorized_number_list:
+                        # Normalize auth number for comparison
+                        auth_normalized = auth_number.strip()
+                        if auth_normalized.startswith('+'):
+                            auth_normalized = auth_normalized[1:]
+                        
+                        # Check if chat ID contains this authorized number
+                        if auth_normalized in chat_id:
+                            is_authorized_chat = True
+                            logger.info(f"🔒 Found AUTHORIZED chat: {chat_id}")
+                            break
+                
+                # Better contact name resolution
+                name = chat_data.get("name", "Unknown")
                 if name.isdigit() or name == chat_id.split('@')[0]:
-                    # Use simplified naming for performance
                     phone_suffix = name[-4:] if len(name) >= 4 else name
                     name = f"Contact {phone_suffix}"
                 
-                chats.append(ChatInfo(
+                chat_info = ChatInfo(
                     id=chat_id,
                     name=name,
                     is_group=chat_data.get("isGroup", False),
                     participant_count=chat_data.get("participantCount")
-                ))
+                )
+                
+                if is_authorized_chat:
+                    authorized_chats.append(chat_info)
+                else:
+                    other_chats.append(chat_info)
             
-            logger.debug(f"Retrieved {len(chats)} chats")
+            # Combine: Authorized chats FIRST, then others (limited)
+            chats = authorized_chats + other_chats[:limit-len(authorized_chats)]
+            
+            logger.info(f"Retrieved {len(authorized_chats)} authorized + {len(other_chats[:limit-len(authorized_chats)])} other = {len(chats)} total chats")
+            if authorized_chats:
+                logger.info(f"✅ Authorized chats prioritized: {[c.id for c in authorized_chats]}")
+            
             return chats
             
         except Exception as e:
@@ -290,9 +311,9 @@ class WhatsAppMCPClient:
         return False
     
     def get_new_messages(self) -> List[Message]:
-        """Poll for new messages across all chats - ONLY messages after bot startup"""
+        """Poll for new messages across all chats - PRIORITIZING authorized chats"""
         new_messages = []
-        startup_grace_period = 10  # seconds - ignore messages from first 10 seconds to avoid old messages
+        startup_grace_period = 5  # Reduced to 5 seconds
         
         try:
             # Skip polling for the first few seconds to avoid processing old messages
@@ -300,7 +321,7 @@ class WhatsAppMCPClient:
                 logger.debug(f"Skipping message polling - within grace period ({startup_grace_period}s)")
                 return []
             
-            chats = self.get_chats()
+            chats = self.get_chats()  # Now prioritizes authorized chats
             logger.debug(f"Polling {len(chats)} chats for new messages (startup: {self._startup_time})")
             
             for chat in chats:
@@ -310,8 +331,12 @@ class WhatsAppMCPClient:
                 if not chat.is_group and not settings.enable_personal_chats:
                     continue
                 
-                # Get recent messages (limit to 2 to avoid processing old history)
-                messages = self.get_messages(chat.id, limit=2)
+                # Get recent messages (limit to 3 for authorized chats, 1 for others)
+                is_authorized_chat = any(auth.replace('+', '').strip() in chat.id 
+                                       for auth in settings.authorized_number_list)
+                limit = 3 if is_authorized_chat else 1
+                
+                messages = self.get_messages(chat.id, limit=limit)
                 
                 # Skip if no messages
                 if not messages:
@@ -327,33 +352,53 @@ class WhatsAppMCPClient:
                     if message.is_from_me:
                         continue
                     
-                    # CRITICAL: Parse message timestamp and check if it's after startup
-                    try:
-                        # Parse ISO timestamp from message
-                        from datetime import datetime
-                        message_time = datetime.fromisoformat(message.timestamp.replace('Z', '+00:00'))
-                        message_timestamp = message_time.timestamp()
-                        
-                        # Only process messages that arrived AFTER bot startup
-                        if message_timestamp < self._startup_time:
-                            logger.debug(f"Skipping old message from {message.sender}: {message.text[:30]}...")
-                            continue
+                    # For authorized chats, be more lenient with timestamp filtering
+                    if is_authorized_chat:
+                        # More lenient timestamp check for authorized numbers
+                        message_age_minutes = (time.time() - self._startup_time) / 60
+                        if message_age_minutes > 30:  # Only skip if very old (30+ minutes)
+                            try:
+                                from datetime import datetime
+                                message_time = datetime.fromisoformat(message.timestamp.replace('Z', '+00:00'))
+                                message_timestamp = message_time.timestamp()
+                                
+                                # For authorized chats, allow messages from last 10 minutes
+                                if message_timestamp < (time.time() - 600):  # 10 minutes ago
+                                    logger.debug(f"Skipping very old message from {message.sender}: {message.text[:30]}...")
+                                    continue
+                            except Exception:
+                                pass  # If timestamp parsing fails, process the message
+                    else:
+                        # Strict timestamp check for non-authorized chats
+                        try:
+                            from datetime import datetime
+                            message_time = datetime.fromisoformat(message.timestamp.replace('Z', '+00:00'))
+                            message_timestamp = message_time.timestamp()
                             
-                    except Exception as e:
-                        logger.warning(f"Could not parse timestamp for message {message.id}: {e}")
-                        # If timestamp parsing fails, use last_seen logic as fallback
+                            if message_timestamp < self._startup_time:
+                                logger.debug(f"Skipping old message from {message.sender}: {message.text[:30]}...")
+                                continue
+                        except Exception:
+                            pass
                     
                     # If this is the first time seeing this chat
                     if last_seen is None:
-                        # Mark this message as seen but don't process it (could be old)
+                        # For authorized chats, process the message; for others, just mark as seen
+                        if is_authorized_chat:
+                            chat_new_messages.append(message)
+                            logger.info(f"🔒 First message from AUTHORIZED chat {chat.id}: {message.text[:30]}...")
+                        else:
+                            logger.debug(f"First time seeing chat {chat.id}, marking as seen but not processing")
                         self._last_message_ids[chat.id] = message.id
-                        logger.debug(f"First time seeing chat {chat.id}, marking as seen but not processing")
                         continue
                     
                     # For existing chats, process all messages newer than last seen
                     if message.id != last_seen:
                         chat_new_messages.append(message)
-                        logger.debug(f"New message from {message.sender}: {message.text[:30]}...")
+                        if is_authorized_chat:
+                            logger.info(f"🔒 New AUTHORIZED message from {message.sender}: {message.text[:30]}...")
+                        else:
+                            logger.debug(f"New message from {message.sender}: {message.text[:30]}...")
                     else:
                         # Found the last seen message, stop here
                         break
@@ -369,7 +414,7 @@ class WhatsAppMCPClient:
             logger.error(f"Error polling for new messages: {e}")
         
         if new_messages:
-            logger.info(f"Found {len(new_messages)} NEW message(s) (ignoring old history)")
+            logger.info(f"Found {len(new_messages)} NEW message(s) (prioritizing authorized chats)")
         
         return new_messages
     
