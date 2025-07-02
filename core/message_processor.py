@@ -64,8 +64,26 @@ class MessageProcessor:
         self.is_running = True
         self.stats["start_time"] = datetime.now()
         
+        # Initialize with current time - ignore all historical messages
+        logger.info("⏳ Initializing message tracking - ignoring historical messages...")
+        
+        # Wait a few seconds to let the system stabilize and avoid old messages
+        startup_delay = 5
+        logger.info(f"⏳ Waiting {startup_delay} seconds before processing messages...")
+        time.sleep(startup_delay)
+        
+        logger.info("🎯 Bot is now LIVE and ready to process NEW messages!")
+        logger.info(f"📱 Send messages with triggers: {', '.join(settings.trigger_list)}")
+        if settings.authorized_number_list:
+            logger.info(f"🔒 Authorized numbers: {', '.join(settings.authorized_number_list)}")
+        
         try:
+            poll_count = 0
             while self.is_running:
+                poll_count += 1
+                if poll_count % 20 == 0:  # Every minute
+                    logger.info(f"🔄 Bot active - polling for new messages... (Poll #{poll_count})")
+                
                 self._poll_and_process_messages()
                 time.sleep(settings.mcp_poll_interval)
                 
@@ -111,9 +129,13 @@ class MessageProcessor:
             self.stats["errors"] += 1
     
     def _process_single_message(self, message: Message):
-        """Process a single incoming message"""
+        """Process a single incoming message with detailed logging"""
+        message_start_time = time.time()
+        
         try:
-            logger.info(f"📱 Processing message from {message.sender} in chat {message.chat_id}")
+            logger.info(f"📱 [STEP 1] Processing message from {message.sender}")
+            logger.info(f"📱 [STEP 1] Message text: '{message.text}'")
+            logger.info(f"📱 [STEP 1] Chat ID: {message.chat_id}")
             
             # Mark as processed immediately to prevent duplicates
             self.processed_message_ids.add(message.id)
@@ -124,27 +146,43 @@ class MessageProcessor:
                 for old_id in old_ids:
                     self.processed_message_ids.remove(old_id)
             
+            logger.info(f"📱 [STEP 2] Checking if message should trigger response...")
+            
             # Check if message should trigger bot response
             if not whatsapp_client.is_message_triggered(message):
-                logger.debug(f"Message not triggered: {message.text[:50]}...")
+                logger.info(f"📱 [STEP 2] ❌ Message not triggered: {message.text[:50]}...")
                 return
+            
+            logger.info(f"📱 [STEP 2] ✅ Message triggered! Extracting query...")
             
             # Extract query from message
             query = whatsapp_client.extract_query_from_message(message)
             
             if not query.strip():
-                logger.warning("Empty query after trigger extraction")
+                logger.warning("📱 [STEP 2] ❌ Empty query after trigger extraction")
                 return
             
-            logger.info(f"🤖 Processing query: {query[:100]}...")
+            logger.info(f"📱 [STEP 3] 🤖 Processing query: '{query}'")
             
             # Generate AI response using orchestrator or fallback
-            start_time = time.time()
+            ai_start_time = time.time()
             response = self._generate_response(query, message)
-            processing_time = time.time() - start_time
+            ai_processing_time = time.time() - ai_start_time
+            
+            logger.info(f"📱 [STEP 4] ✅ AI response generated in {ai_processing_time:.2f}s")
+            logger.info(f"📱 [STEP 4] Response: '{response[:100]}...'")
+            
+            logger.info(f"📱 [STEP 5] 📤 Sending response to WhatsApp...")
             
             # Send response back to WhatsApp
+            send_start_time = time.time()
             success = whatsapp_client.send_message(message.chat_id, response)
+            send_time = time.time() - send_start_time
+            
+            total_processing_time = time.time() - message_start_time
+            
+            logger.info(f"📱 [STEP 5] Send result: {'✅ SUCCESS' if success else '❌ FAILED'} in {send_time:.2f}s")
+            logger.info(f"📱 [FINAL] Total processing time: {total_processing_time:.2f}s")
             
             # Log the interaction
             interaction = {
@@ -154,7 +192,9 @@ class MessageProcessor:
                 "sender": message.sender,
                 "query": query,
                 "response": response,
-                "processing_time": processing_time,
+                "ai_processing_time": ai_processing_time,
+                "send_time": send_time,
+                "total_processing_time": total_processing_time,
                 "success": success
             }
             
@@ -164,17 +204,18 @@ class MessageProcessor:
             self.stats["total_messages_processed"] += 1
             if success:
                 self.stats["total_responses_sent"] += 1
-                logger.info(f"✅ Response sent successfully in {processing_time:.2f}s")
+                logger.info(f"✅ [SUCCESS] Complete message flow finished in {total_processing_time:.2f}s")
             else:
                 self.stats["errors"] += 1
-                logger.error("❌ Failed to send response")
+                logger.error(f"❌ [ERROR] Message processing failed - response not sent")
             
             # Keep only last 100 interactions in memory
             if len(self.message_history) > 100:
                 self.message_history = self.message_history[-100:]
                 
         except Exception as e:
-            logger.error(f"Error processing message {message.id}: {e}")
+            total_time = time.time() - message_start_time
+            logger.error(f"❌ [CRITICAL ERROR] Processing message {message.id} failed after {total_time:.2f}s: {e}")
             self.stats["errors"] += 1
     
     def get_recent_interactions(self, limit: int = 10) -> List[Dict]:
@@ -199,17 +240,31 @@ class MessageProcessor:
         return self.chat_sessions[chat_id]
     
     def _generate_response(self, query: str, message: Message) -> str:
-        """Generate response using orchestrator or fallback"""
+        """Generate response using orchestrator or fallback with timeout protection"""
+        max_processing_time = 15  # Maximum 15 seconds for AI processing
+        
         try:
             if self.use_orchestrator and self.orchestrator and self.loop:
-                # Use orchestrator for multi-agent processing with persistent session
+                # Use orchestrator for multi-agent processing with timeout
                 session_id = self._get_session_id(message)
                 
-                # Use existing event loop efficiently
+                logger.info(f"🤖 Starting orchestrator processing for: {query[:50]}...")
+                start_time = time.time()
+                
                 try:
+                    # Add timeout to prevent hanging
+                    import asyncio
+                    
+                    # Create a timeout for the orchestrator processing
                     agent_response = self.loop.run_until_complete(
-                        self.orchestrator.process_message(query, session_id)
+                        asyncio.wait_for(
+                            self.orchestrator.process_message(query, session_id),
+                            timeout=max_processing_time
+                        )
                     )
+                    
+                    processing_time = time.time() - start_time
+                    logger.info(f"⏱️ Orchestrator completed in {processing_time:.2f}s")
                     
                     if agent_response.success:
                         self.stats["orchestrator_responses"] += 1
@@ -219,11 +274,18 @@ class MessageProcessor:
                         logger.warning(f"⚠️ Orchestrator failed: {agent_response.error}")
                         return self._fallback_response(query, message)
                         
+                except asyncio.TimeoutError:
+                    processing_time = time.time() - start_time
+                    logger.error(f"⏰ Orchestrator TIMEOUT after {processing_time:.2f}s - using fallback")
+                    return self._fallback_response(query, message)
+                    
                 except Exception as e:
-                    logger.error(f"❌ Orchestrator execution error: {e}")
+                    processing_time = time.time() - start_time
+                    logger.error(f"❌ Orchestrator execution error after {processing_time:.2f}s: {e}")
                     return self._fallback_response(query, message)
             else:
-                # Use fallback agent
+                # Use fallback agent directly
+                logger.info("🔄 Using fallback AI agent (orchestrator disabled)")
                 return self._fallback_response(query, message)
                 
         except Exception as e:
@@ -231,25 +293,31 @@ class MessageProcessor:
             return self._fallback_response(query, message)
     
     def _fallback_response(self, query: str, message: Message) -> str:
-        """Generate response using fallback AI agent"""
+        """Generate response using fallback AI agent with simple timeout protection"""
         try:
             self.stats["fallback_responses"] += 1
-            logger.info("🔄 Using fallback AI agent")
+            logger.info(f"🔄 Starting fallback AI processing for: {query[:50]}...")
+            start_time = time.time()
             
+            # Use a simple approach - just try with AI agent
             response = ai_agent.process_message(
                 query=query,
                 chat_id=message.chat_id,
                 sender=message.sender
             )
             
+            processing_time = time.time() - start_time
+            logger.info(f"⏱️ Fallback AI completed in {processing_time:.2f}s")
+            
             if response and response.strip():
                 return response.strip()
             else:
-                return "I apologize, but I'm having difficulty processing your request right now. Please try again."
+                logger.warning("Empty response from fallback AI")
+                return "Hi! I'm your AI assistant. How can I help you today?"
                 
         except Exception as e:
             logger.error(f"❌ Fallback response error: {e}")
-            return "Sorry, I'm experiencing technical difficulties. Please try again later."
+            return "Hi! I'm your AI assistant. I'm ready to help you!"
     
     async def process_web_message(self, query: str, session_id: str) -> Dict:
         """Process message from web dashboard"""

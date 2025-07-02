@@ -49,9 +49,9 @@ class AgentOrchestrator:
                 "name": "Q&A Assistant", 
                 "description": "General question answering",
                 "capabilities": ["general-qa", "factual-questions"],
-                "model": "gemini-2.5-flash-lite-preview-06-17",
+                "model": "gemini-2.0-flash",
                 "temperature": 0.7,
-                "max_tokens": 500,
+                "max_tokens": 300,
                 "enabled": True
             }]
             self.routing_rules = {"default_agent": "qna-chatbot"}
