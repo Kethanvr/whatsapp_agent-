@@ -14,7 +14,7 @@ BRIDGE_PID=$!
 # Wait for bridge to be ready
 echo "⏳ Waiting for WhatsApp Bridge to initialize..."
 for i in {1..30}; do
-    if curl -f http://localhost:3333/health 2>/dev/null; then
+    if curl -f http://localhost:${PORT}/health 2>/dev/null; then
         echo "✅ WhatsApp Bridge is ready"
         break
     fi

@@ -683,9 +683,8 @@ func extractDirectPathFromURL(url string) string {
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		w.Write([]byte("OK"))
 	})
 
 	// Get all chats endpoint
@@ -996,7 +995,8 @@ func main() {
 		if port == "" {
 			port = "8080"
 		}
-		http.HandleFunc("/qr", func(w http.ResponseWriter, r *http.Request) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/qr", func(w http.ResponseWriter, r *http.Request) {
 			f, err := os.Open("qr.png")
 			if err != nil {
 				http.Error(w, "QR code not found", http.StatusNotFound)
@@ -1006,8 +1006,12 @@ func main() {
 			w.Header().Set("Content-Type", "image/png")
 			io.Copy(w, f)
 		})
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+		})
 		log.Printf("QR code server running on :%s/qr", port)
-		http.ListenAndServe(":"+port, nil)
+		http.ListenAndServe(":"+port, mux)
 	}()
 
 	// Connect to WhatsApp
