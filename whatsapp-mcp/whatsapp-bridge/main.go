@@ -972,7 +972,43 @@ func main() {
 			logger.Infof("Connected to WhatsApp")
 
 		case *events.LoggedOut:
-			logger.Warnf("Device logged out, please scan QR code to log in again")
+			// WhatsApp logged the session out (e.g. multi-device limit, network
+			// hiccup).  Attempt a transparent reconnect so the user does not
+			// have to re-deploy or restart the whole container.  A full
+			// re-pair (QR scan) is only needed if WhatsApp has explicitly
+			// invalidated the device – in that case Connect() will still
+			// return an error and we will log it.
+
+			logger.Warnf("Logged out event received – trying to reconnect in 30 s …")
+
+			go func() {
+				time.Sleep(30 * time.Second)
+				if err := client.Connect(); err != nil {
+					logger.Errorf("Reconnect attempt failed: %v", err)
+				} else {
+					logger.Infof("Reconnected successfully after LoggedOut event")
+				}
+			}()
+
+		case *events.Disconnected:
+			// Network drop – WhatsMeow will emit Disconnected.  Retry with an
+			// exponential back-off (simple version here).
+
+			logger.Warnf("Disconnected from WhatsApp – attempting automatic reconnect …")
+
+			go func() {
+				backoff := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second}
+				for i, d := range backoff {
+					time.Sleep(d)
+					if err := client.Connect(); err != nil {
+						logger.Errorf("Reconnect try %d failed: %v", i+1, err)
+						continue
+					}
+					logger.Infof("Reconnected on attempt %d", i+1)
+					return
+				}
+				logger.Errorf("All reconnect attempts failed – manual intervention required (scan QR again)")
+			}()
 		}
 	})
 
