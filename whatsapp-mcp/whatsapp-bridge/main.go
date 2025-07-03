@@ -992,6 +992,10 @@ func main() {
 
 	// Start HTTP server for QR code
 	go func() {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
 		http.HandleFunc("/qr", func(w http.ResponseWriter, r *http.Request) {
 			f, err := os.Open("qr.png")
 			if err != nil {
@@ -1002,8 +1006,8 @@ func main() {
 			w.Header().Set("Content-Type", "image/png")
 			io.Copy(w, f)
 		})
-		log.Println("QR code server running on :8080/qr")
-		http.ListenAndServe(":8080", nil)
+		log.Printf("QR code server running on :%s/qr", port)
+		http.ListenAndServe(":"+port, nil)
 	}()
 
 	// Connect to WhatsApp
