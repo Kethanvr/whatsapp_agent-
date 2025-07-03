@@ -11,6 +11,7 @@ import argparse
 from loguru import logger
 from core.message_processor import message_processor
 from config.settings import settings
+import threading
 
 def setup_logging():
     """Configure clean, structured logging with loguru"""
@@ -142,16 +143,38 @@ def main():
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind HTTP server')
     args = parser.parse_args()
 
+    # ------------------------------------------------------------------
+    # Start the message processor (polling loop) in a separate thread
+    # ------------------------------------------------------------------
+    def _run_message_processor():  # noqa: WPS430
+        try:
+            message_processor.start_polling()
+        except Exception as exc:  # pragma: no cover – keep server alive
+            logger.error("Message processor crashed: {}", exc)
+
+    threading.Thread(target=_run_message_processor, daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # Minimal FastAPI app for health and simple info endpoints
+    # ------------------------------------------------------------------
     from fastapi import FastAPI
     import uvicorn
 
     app = FastAPI()
 
     @app.get("/health")
-    async def health():
+    async def health():  # noqa: D401
+        """Basic liveness probe used by Docker/Render."""
         return {"status": "ok"}
 
-    uvicorn.run(app, host=args.host, port=args.port)
+    @app.get("/stats")
+    async def stats():  # noqa: D401
+        """Expose current message-processor stats for debugging."""
+        from core.message_processor import message_processor  # local import to avoid cycles
+
+        return message_processor.get_stats()
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 if __name__ == "__main__":
     main() 
