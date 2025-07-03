@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Use PORT from environment or default to 3333
+export PORT=${PORT:-3333}
+
 echo "🚀 Starting WhatsApp AI Agent Production Environment"
 
 # Start WhatsApp Bridge in background
@@ -24,7 +27,7 @@ done
 
 # Start MCP Server in background
 echo "🔧 Starting MCP Server..."
-cd /app/mcp-server && python main.py &
+cd /app/mcp-server && PORT=3334 python main.py &
 MCP_PID=$!
 
 # Wait for MCP server to be ready
@@ -45,7 +48,7 @@ done
 # Start main application
 echo "🤖 Starting Main AI Agent..."
 cd /app
-exec python main.py
+exec python main.py --port $PORT
 
 # Cleanup function
 cleanup() {

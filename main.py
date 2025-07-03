@@ -7,6 +7,7 @@ Powered by Gemini + LangChain + LangGraph + WhatsApp-MCP
 import os
 import sys
 import signal
+import argparse
 from loguru import logger
 from core.message_processor import message_processor
 from config.settings import settings
@@ -136,6 +137,10 @@ def display_status_update(message: str, status: str = "INFO"):
 
 def main():
     """Main application entry point"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 3333)), help='Port to bind HTTP server (if applicable)')
+    args = parser.parse_args()
+    # The port is available as args.port, use it if you add an HTTP server in the future.
     # Setup logging
     setup_logging()
     

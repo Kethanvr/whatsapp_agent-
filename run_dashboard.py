@@ -25,12 +25,13 @@ def main():
     
     # Import settings after environment is loaded
     from config.settings import settings
+    dashboard_port = int(os.environ.get("PORT", settings.dashboard_port))
     
     # Launch streamlit
     cmd = [
         sys.executable, "-m", "streamlit", "run",
         "dashboard/streamlit_app.py",
-        "--server.port", str(settings.dashboard_port),
+        "--server.port", str(dashboard_port),
         "--server.address", settings.dashboard_host,
         "--server.headless", "true"
     ]
