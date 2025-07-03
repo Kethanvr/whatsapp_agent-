@@ -1,0 +1,86 @@
+services:
+  - type: web
+    name: whatsapp-ai-agent
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+
+    # Auto-deploy when main branch changes
+    autoDeploy: true
+
+    # Environment variables (set these in Render dashboard)
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false # Set manually in dashboard for security
+
+      - key: BOT_NAME
+        value: WhatsApp AI Assistant
+
+      - key: BOT_TRIGGERS
+        value: "!ask,@bot,@ai,>"
+
+      - key: LOG_LEVEL
+        value: INFO
+
+      - key: MCP_SERVER_URL
+        value: http://localhost:3334
+
+      - key: MCP_POLL_INTERVAL
+        value: "3"
+
+      - key: ENABLE_GROUP_CHATS
+        value: "true"
+
+      - key: ENABLE_PERSONAL_CHATS
+        value: "true"
+
+      - key: MAX_RESPONSE_LENGTH
+        value: "500"
+
+      - key: AGENT_TEMPERATURE
+        value: "0.7"
+
+      - key: AGENT_MODEL
+        value: gemini-2.0-flash
+
+      - key: ENABLE_CONSOLE_LOGS
+        value: "true"
+
+      - key: ENABLE_FILE_LOGS
+        value: "true"
+
+      - key: DASHBOARD_PORT
+        value: "8501"
+
+      - key: DASHBOARD_HOST
+        value: "0.0.0.0"
+
+    # Persistent disk for data storage
+    disk:
+      name: whatsapp-agent-data
+      mountPath: /app/data
+      sizeGB: 1
+
+    # Health check endpoint
+    healthCheckPath: /health
+
+    # Build command (optional, Docker handles this)
+    # buildCommand: docker build -t whatsapp-agent .
+
+    # Start command (handled by Dockerfile)
+    # startCommand: /app/start-production.sh
+# Optional: Background worker for long-running tasks
+# - type: worker
+#   name: whatsapp-agent-worker
+#   env: docker
+#   dockerfilePath: ./Dockerfile
+#   plan: starter
+#
+#   # Same environment variables as web service
+#   envVars:
+#     - fromService:
+#         type: web
+#         name: whatsapp-ai-agent
+#
+#   # Worker-specific start command
+#   startCommand: python worker.py
