@@ -18,6 +18,9 @@ COPY whatsapp-mcp/whatsapp-bridge/ ./
 # Download Go dependencies (this will generate or update go.sum if needed)
 RUN go mod download
 
+# Ensure go.sum is fully populated (fetches any missing checksums)
+RUN go mod tidy
+
 # Build the Go binary with optimizations
 RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o whatsapp-bridge .
 
