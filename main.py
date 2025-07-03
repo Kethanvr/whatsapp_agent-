@@ -64,8 +64,8 @@ def check_environment():
         issues.append("❌ GEMINI_API_KEY not configured in .env file")
     
     # Check MCP server URL format
-    if not settings.mcp_server_url.startswith(('http://', 'https://')):
-        issues.append("❌ MCP_SERVER_URL must start with http:// or https://")
+    if not settings.bridge_server_url.startswith(('http://', 'https://')):
+        issues.append("❌ BRIDGE_SERVER_URL must start with http:// or https://")
     
     # Create logs directory
     os.makedirs("logs", exist_ok=True)
@@ -89,7 +89,7 @@ def display_startup_info():
     logger.info("⚙️  System Configuration:")
     logger.info(f"   • Bot Name: {settings.bot_name}")
     logger.info(f"   • Agent Model: {settings.agent_model}")
-    logger.info(f"   • MCP Server: {settings.mcp_server_url}")
+    logger.info(f"   • WhatsApp Bridge: {settings.bridge_server_url}")
     logger.info(f"   • Poll Interval: {settings.mcp_poll_interval}s")
     logger.info("")
     

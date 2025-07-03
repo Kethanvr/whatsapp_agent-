@@ -65,7 +65,7 @@ class MessageProcessor:
         # Check MCP server connectivity
         if not whatsapp_client.health_check():
             logger.error("❌ Cannot connect to WhatsApp MCP server. Please ensure it's running on {}", 
-                        settings.mcp_server_url)
+                        settings.bridge_server_url)
             return False
         
         logger.info("✅ Connected to WhatsApp MCP server")
