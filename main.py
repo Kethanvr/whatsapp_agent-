@@ -138,50 +138,20 @@ def display_status_update(message: str, status: str = "INFO"):
 def main():
     """Main application entry point"""
     parser = argparse.ArgumentParser()
-    parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 3333)), help='Port to bind HTTP server (if applicable)')
+    parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 10000)), help='Port to bind HTTP server')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind HTTP server')
     args = parser.parse_args()
-    # The port is available as args.port, use it if you add an HTTP server in the future.
-    # Setup logging
-    setup_logging()
-    
-    # Display startup info
-    display_startup_info()
-    
-    # Check environment
-    if not check_environment():
-        display_status_update("Environment configuration failed", "ERROR")
-        sys.exit(1)
-    
-    display_status_update("Environment configuration valid", "SUCCESS")
-    
-    # Setup signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    display_status_update("Signal handlers configured", "SUCCESS")
-    
-    try:
-        # Initialize multi-agent system
-        display_status_update("Initializing multi-agent orchestrator...", "LOADING")
-        
-        # Start the message processor
-        display_status_update("Starting message processor...", "LOADING")
-        success = message_processor.start_polling()
-        
-        if not success:
-            display_status_update("Message processor failed to start", "ERROR")
-            sys.exit(1)
-        
-        display_status_update("System is now ready and processing messages!", "SUCCESS")
-            
-    except KeyboardInterrupt:
-        logger.info("")
-        display_status_update("Shutdown requested by user", "INFO")
-    except Exception as e:
-        display_status_update(f"Unexpected error: {e}", "ERROR")
-        sys.exit(1)
-    finally:
-        display_status_update("WhatsApp AI Assistant stopped", "INFO")
-        logger.info("")
+
+    from fastapi import FastAPI
+    import uvicorn
+
+    app = FastAPI()
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
+    uvicorn.run(app, host=args.host, port=args.port)
 
 if __name__ == "__main__":
     main() 

@@ -1,14 +1,14 @@
 #!/bin/bash
 set -e
 
-# Use PORT from environment or default to 3333
-export PORT=${PORT:-3333}
+# Use PORT from environment or default to 10000
+export PORT=${PORT:-10000}
 
 echo "🚀 Starting WhatsApp AI Agent Production Environment"
 
 # Start WhatsApp Bridge in background
 echo "📱 Starting WhatsApp Bridge..."
-whatsapp-bridge &
+/usr/local/bin/whatsapp-bridge &
 BRIDGE_PID=$!
 
 # Wait for bridge to be ready
@@ -48,7 +48,7 @@ done
 # Start main application
 echo "🤖 Starting Main AI Agent..."
 cd /app
-exec python main.py --port $PORT
+exec python main.py --host 0.0.0.0 --port $PORT
 
 # Cleanup function
 cleanup() {

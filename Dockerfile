@@ -95,7 +95,7 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:3333/health || exit 1
+    CMD curl -f http://localhost:${PORT:-10000}/health || exit 1
 
 # Expose ports
 EXPOSE 3333 3334 8501 8080
