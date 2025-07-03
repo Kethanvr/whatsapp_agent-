@@ -53,12 +53,12 @@ type MessageStore struct {
 // Initialize message store
 func NewMessageStore() (*MessageStore, error) {
 	// Create directory for database if it doesn't exist
-	if err := os.MkdirAll("/data", 0755); err != nil {
+	if err := os.MkdirAll("data", 0755); err != nil {
 		return nil, fmt.Errorf("failed to create store directory: %v", err)
 	}
 
 	// Open SQLite database for messages
-	db, err := sql.Open("sqlite3", "file:/data/messages.db?_foreign_keys=on")
+	db, err := sql.Open("sqlite3", "file:data/messages.db?_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
@@ -566,7 +566,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	var err error
 
 	// First, check if we already have this file
-	chatDir := fmt.Sprintf("/data/%s", strings.ReplaceAll(chatJID, ":", "_"))
+	chatDir := fmt.Sprintf("data/%s", strings.ReplaceAll(chatJID, ":", "_"))
 	localPath := ""
 
 	// Get media info from the database
@@ -914,14 +914,15 @@ func main() {
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
 	// Create directory for database if it doesn't exist
-	if err := os.MkdirAll("/data", 0755); err != nil {
+	if err := os.MkdirAll("data", 0755); err != nil {
 		logger.Errorf("Failed to create store directory: %v", err)
 		return
 	}
 
-	// Use Render's persistent disk at /data so the WhatsApp session survives
-	// container restarts.
-	dbPath := "file:/data/whatsapp.db?_foreign_keys=on"
+	// Store WhatsApp session in ./data (inside /app) – this directory is
+	// created and chowned to appuser in the Dockerfile so we have write
+	// permissions even when running as non-root.
+	dbPath := "file:data/whatsapp.db?_foreign_keys=on"
 	container, err := sqlstore.New("sqlite3", dbPath, dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
