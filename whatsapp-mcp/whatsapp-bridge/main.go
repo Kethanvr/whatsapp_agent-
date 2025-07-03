@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"net/http"
@@ -22,6 +23,9 @@ import (
 
 	"bytes"
 
+	"io"
+
+	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -986,6 +990,22 @@ func main() {
 	// Create channel to track connection success
 	connected := make(chan bool, 1)
 
+	// Start HTTP server for QR code
+	go func() {
+		http.HandleFunc("/qr", func(w http.ResponseWriter, r *http.Request) {
+			f, err := os.Open("qr.png")
+			if err != nil {
+				http.Error(w, "QR code not found", http.StatusNotFound)
+				return
+			}
+			defer f.Close()
+			w.Header().Set("Content-Type", "image/png")
+			io.Copy(w, f)
+		})
+		log.Println("QR code server running on :8080/qr")
+		http.ListenAndServe(":8080", nil)
+	}()
+
 	// Connect to WhatsApp
 	if client.Store.ID == nil {
 		// No ID stored, this is a new client, need to pair with phone
@@ -1001,6 +1021,11 @@ func main() {
 			if evt.Event == "code" {
 				fmt.Println("\nScan this QR code with your WhatsApp app:")
 				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				// Save QR as PNG
+				err := qrcode.WriteFile(evt.Code, qrcode.Medium, 256, "qr.png")
+				if err != nil {
+					logger.Errorf("Failed to save QR code PNG: %v", err)
+				}
 			} else if evt.Event == "success" {
 				connected <- true
 				break
