@@ -680,15 +680,15 @@ func extractDirectPathFromURL(url string) string {
 }
 
 // Start a REST API server to expose the WhatsApp client functionality
-func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
+func registerRESTEndpoints(mux *http.ServeMux, client *whatsmeow.Client, messageStore *MessageStore) {
 	// Health check endpoint
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
 	// Get all chats endpoint
-	http.HandleFunc("/chats", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/chats", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -727,7 +727,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Get messages from specific chat endpoint
-	http.HandleFunc("/messages/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/messages/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -774,7 +774,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Send message endpoint (compatible with our AI assistant)
-	http.HandleFunc("/send_message", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/send_message", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -811,7 +811,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Handler for sending messages (original endpoint)
-	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -857,7 +857,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Handler for downloading media
-	http.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -906,17 +906,6 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			Path:     path,
 		})
 	})
-
-	// Start the server
-	serverAddr := fmt.Sprintf(":%d", port)
-	fmt.Printf("Starting REST API server on %s...\n", serverAddr)
-
-	// Run server in a goroutine so it doesn't block
-	go func() {
-		if err := http.ListenAndServe(serverAddr, nil); err != nil {
-			fmt.Printf("REST API server error: %v\n", err)
-		}
-	}()
 }
 
 func main() {
@@ -986,16 +975,16 @@ func main() {
 		}
 	})
 
-	// Create channel to track connection success
-	connected := make(chan bool, 1)
-
-	// Start HTTP server for QR code
+	// ------------------------------------------------------------------
+	// Start HTTP server (QR + REST) on Render's $PORT
+	// ------------------------------------------------------------------
 	go func() {
 		port := os.Getenv("PORT")
 		if port == "" {
 			port = "8080"
 		}
 		mux := http.NewServeMux()
+		// QR + health routes
 		mux.HandleFunc("/qr", func(w http.ResponseWriter, r *http.Request) {
 			f, err := os.Open("qr.png")
 			if err != nil {
@@ -1010,7 +999,12 @@ func main() {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("OK"))
 		})
-		log.Printf("QR code server running on :%s/qr", port)
+
+		// Register the REST endpoints on the *same* mux so they are exposed
+		// via Render's single allowed port.
+		registerRESTEndpoints(mux, client, messageStore)
+
+		log.Printf("Server (QR + REST) listening on :%s", port)
 		http.ListenAndServe(":"+port, mux)
 	}()
 
@@ -1035,15 +1029,12 @@ func main() {
 					logger.Errorf("Failed to save QR code PNG: %v", err)
 				}
 			} else if evt.Event == "success" {
-				connected <- true
 				break
 			}
 		}
 
 		// Wait for connection
 		select {
-		case <-connected:
-			fmt.Println("\nSuccessfully connected and authenticated!")
 		case <-time.After(3 * time.Minute):
 			logger.Errorf("Timeout waiting for QR code scan")
 			return
@@ -1055,7 +1046,6 @@ func main() {
 			logger.Errorf("Failed to connect: %v", err)
 			return
 		}
-		connected <- true
 	}
 
 	// Wait a moment for connection to stabilize
@@ -1068,14 +1058,13 @@ func main() {
 
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
-	// Start REST API server (changed port to 3334 to avoid conflicts)
-	startRESTServer(client, messageStore, 3334)
-
-	// Create a channel to keep the main goroutine alive
+	// ------------------------------------------------------------------
+	// Keep main goroutine alive until SIGINT/SIGTERM
+	// ------------------------------------------------------------------
 	exitChan := make(chan os.Signal, 1)
 	signal.Notify(exitChan, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Println("REST server is running. Press Ctrl+C to disconnect and exit.")
+	fmt.Println("Server is running. Press Ctrl+C to disconnect and exit.")
 
 	// Wait for termination signal
 	<-exitChan
