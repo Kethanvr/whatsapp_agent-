@@ -681,11 +681,8 @@ func extractDirectPathFromURL(url string) string {
 
 // Start a REST API server to expose the WhatsApp client functionality
 func registerRESTEndpoints(mux *http.ServeMux, client *whatsmeow.Client, messageStore *MessageStore) {
-	// Health check endpoint
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+	// NOTE: Do NOT register /health here – it is already added by the QR server
+	// setup code below. Multiple registrations on the same path cause a panic.
 
 	// Get all chats endpoint
 	mux.HandleFunc("/chats", func(w http.ResponseWriter, r *http.Request) {
