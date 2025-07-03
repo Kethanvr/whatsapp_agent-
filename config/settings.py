@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # MCP_SERVER_URL env var for backward-compatibility but prefer the new
     # BRIDGE_SERVER_URL if provided.
     bridge_server_url: str = Field(
-        default=os.getenv("MCP_SERVER_URL", "http://localhost:10000"),
+        default=os.getenv("MCP_SERVER_URL", "http://localhost:3334"),
         env="BRIDGE_SERVER_URL",
     )
     
@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # If MCP_SERVER_URL env var is present we honour it; otherwise we fall back
     # to the new bridge_server_url so existing references don't break.
     mcp_server_url: str = Field(
-        default_factory=lambda: os.getenv("MCP_SERVER_URL", os.getenv("BRIDGE_SERVER_URL", "http://localhost:10000")),
+        default_factory=lambda: os.getenv("MCP_SERVER_URL", os.getenv("BRIDGE_SERVER_URL", "http://localhost:3334")),
         env="MCP_SERVER_URL",
     )
     
