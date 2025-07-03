@@ -13,9 +13,11 @@ RUN apk add --no-cache git gcc musl-dev sqlite-dev
 WORKDIR /go/src/whatsapp-bridge
 
 # Copy Go module files
-COPY whatsapp-mcp/whatsapp-bridge/go.mod whatsapp-mcp/whatsapp-bridge/go.sum ./
+COPY whatsapp-mcp/whatsapp-bridge/go.mod .
+# Copy go.sum if it exists, otherwise it will be generated
+COPY whatsapp-mcp/whatsapp-bridge/go.sum . 2>/dev/null || true
 
-# Download Go dependencies
+# Download Go dependencies (this will generate or update go.sum if needed)
 RUN go mod download
 
 # Copy Go source code
