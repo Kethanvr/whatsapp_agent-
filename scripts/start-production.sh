@@ -48,7 +48,7 @@ done
 # Start main application
 echo "🤖 Starting Main AI Agent..."
 cd /app
-exec python main.py --host 0.0.0.0 --port $PORT
+exec python main.py --host 0.0.0.0 --port 8503
 
 # Cleanup function
 cleanup() {

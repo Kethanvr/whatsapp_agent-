@@ -138,7 +138,7 @@ def display_status_update(message: str, status: str = "INFO"):
 def main():
     """Main application entry point"""
     parser = argparse.ArgumentParser()
-    parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 10000)), help='Port to bind HTTP server')
+    parser.add_argument('--port', type=int, default=int(os.environ.get('MAIN_PORT', 8503)), help='Port to bind HTTP server')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind HTTP server')
     args = parser.parse_args()
 
