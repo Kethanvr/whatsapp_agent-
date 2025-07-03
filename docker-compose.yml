@@ -1,0 +1,95 @@
+version: "3.8"
+
+services:
+  # Main WhatsApp AI Agent Application
+  whatsapp-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: whatsapp-ai-agent
+    restart: unless-stopped
+
+    # Environment variables (use .env file)
+    env_file:
+      - .env
+
+    # Port mappings
+    ports:
+      - "3333:3333" # WhatsApp Bridge
+      - "3334:3334" # MCP Server
+      - "8501:8501" # Streamlit Dashboard (optional)
+
+    # Volume mounts for persistence
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./store:/app/store
+      - whatsapp_session:/app/whatsapp-session
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
+        reservations:
+          memory: 512M
+          cpus: "0.25"
+
+    # Network
+    networks:
+      - whatsapp-network
+
+  # Optional: Streamlit Dashboard (separate container)
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: whatsapp-dashboard
+    restart: unless-stopped
+
+    # Environment variables
+    env_file:
+      - .env
+
+    # Port mapping
+    ports:
+      - "8502:8502"
+
+    # Volumes
+    volumes:
+      - ./logs:/app/logs:ro
+      - ./data:/app/data:ro
+
+    # Dependencies
+    depends_on:
+      whatsapp-agent:
+        condition: service_healthy
+
+    # Network
+    networks:
+      - whatsapp-network
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8502/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  whatsapp_session:
+    driver: local
+
+networks:
+  whatsapp-network:
+    driver: bridge
