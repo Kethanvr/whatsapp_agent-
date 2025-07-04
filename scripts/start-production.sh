@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Use PORT from environment or default to 10000
-export PORT=${PORT:-10000}
+# Use PORT from environment or default to 3334
+export PORT=${PORT:-3334}
 
 echo "🚀 Starting WhatsApp AI Agent Production Environment"
 
@@ -28,7 +28,7 @@ done
 
 # Start MCP Server in background
 echo "🔧 Starting MCP Server..."
-cd /app/mcp-server && PORT=3334 python main.py &
+cd /app/mcp-server && python main.py &
 MCP_PID=$!
 
 # Wait for MCP server to be ready
