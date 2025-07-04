@@ -390,4 +390,7 @@ class MessageProcessor:
             }
 
 # Global message processor instance
-message_processor = MessageProcessor() 
+message_processor = MessageProcessor()
+
+# Constant indicating whether the enhanced orchestrator with sub-agents is available
+ENHANCED_ORCHESTRATOR_AVAILABLE = bool(message_processor.use_orchestrator) 

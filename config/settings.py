@@ -3,7 +3,7 @@ Configuration settings for WhatsApp AI Assistant
 """
 from pydantic_settings import BaseSettings
 from pydantic import Field
-from typing import List
+from typing import List, Optional
 import os
 
 class Settings(BaseSettings):
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(..., env="GEMINI_API_KEY")
     
     # WhatsApp MCP Configuration
-    mcp_server_url: str = Field(default="http://localhost:3334", env="MCP_SERVER_URL")
+    bridge_server_url: str = Field(default="http://localhost:3334", env="BRIDGE_SERVER_URL")
     mcp_poll_interval: int = Field(default=3, env="MCP_POLL_INTERVAL")
     
     # Bot Behavior

@@ -7,6 +7,8 @@ from typing import List, Dict, Optional, Any, Tuple
 from loguru import logger
 from dataclasses import dataclass
 from config.settings import settings
+import aiohttp
+import logging
 
 @dataclass
 class ChatInfo:
@@ -31,7 +33,7 @@ class WhatsAppMCPClient:
     """Client for communicating with whatsapp-mcp server"""
     
     def __init__(self, base_url: str = None):
-        self.base_url = base_url or settings.mcp_server_url
+        self.base_url = base_url or settings.bridge_server_url
         self.session = requests.Session()
         self._last_message_ids = {}  # Track last seen message per chat
         self._startup_time = time.time()  # Track when bot started to ignore old messages
