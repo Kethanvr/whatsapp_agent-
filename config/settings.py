@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # localhost URL using the container's $PORT value (Render injects it).
     bridge_server_url: str = Field(
         default_factory=lambda: os.getenv("BRIDGE_SERVER_URL")
-        or f"http://localhost:{os.getenv('PORT', '10000')}",
+        or f"http://localhost:{os.getenv('PORT', '3334')}",
         env="BRIDGE_SERVER_URL",
     )
     
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # to the new bridge_server_url so existing references don't break.
     mcp_server_url: str = Field(
         default_factory=lambda: os.getenv("MCP_SERVER_URL")
-        or f"http://localhost:{os.getenv('PORT', '10000')}",
+        or f"http://localhost:{os.getenv('PORT', '3334')}",
         env="MCP_SERVER_URL",
     )
     
