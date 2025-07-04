@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
+	_ "modernc.org/sqlite"
 
 	"bytes"
 
@@ -53,8 +53,8 @@ func NewMessageStore() (*MessageStore, error) {
 		return nil, fmt.Errorf("failed to create store directory: %v", err)
 	}
 
-	// Open SQLite database for messages
-	db, err := sql.Open("sqlite3", "file:store/messages.db?_foreign_keys=on")
+	// Open SQLite database for messages with WAL mode enabled for better concurrency
+	db, err := sql.Open("sqlite", "file:store/messages.db?_foreign_keys=on&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
@@ -704,7 +704,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			// Get chat name from database
 			var name string
 			err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", jid).Scan(&name)
-			if err != nil {
+		if err != nil {
 				name = jid // fallback to JID if name not found
 			}
 
@@ -917,12 +917,12 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 }
 
 func main() {
-	// Set up logger
-	logger := waLog.Stdout("Client", "INFO", true)
+	// Set up logger with a WARN level to reduce noise
+	logger := waLog.Stdout("Client", "WARN", true)
 	logger.Infof("Starting WhatsApp client...")
 
 	// Create database connection for storing session data
-	dbLog := waLog.Stdout("Database", "INFO", true)
+	dbLog := waLog.Stdout("Database", "WARN", true)
 
 	// Create directory for database if it doesn't exist
 	if err := os.MkdirAll("store", 0755); err != nil {
@@ -930,7 +930,8 @@ func main() {
 		return
 	}
 
-	container, err := sqlstore.New("sqlite3", "file:store/whatsapp.db?_foreign_keys=on", dbLog)
+	// Enable WAL mode and a busy timeout to prevent database lock errors
+	container, err := sqlstore.New("sqlite", "file:store/whatsapp.db?_pragma=foreign_keys(on)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
 		return
@@ -1281,13 +1282,13 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 func requestHistorySync(client *whatsmeow.Client) {
 	if client == nil {
 		fmt.Println("Client is not initialized. Cannot request history sync.")
-		return
-	}
+			return
+		}
 
 	if !client.IsConnected() {
 		fmt.Println("Client is not connected. Please ensure you are connected to WhatsApp first.")
-		return
-	}
+			return
+		}
 
 	if client.Store.ID == nil {
 		fmt.Println("Client is not logged in. Please scan the QR code first.")
@@ -1298,8 +1299,8 @@ func requestHistorySync(client *whatsmeow.Client) {
 	historyMsg := client.BuildHistorySyncRequest(nil, 100)
 	if historyMsg == nil {
 		fmt.Println("Failed to build history sync request.")
-		return
-	}
+			return
+		}
 
 	_, err := client.SendMessage(context.Background(), types.JID{
 		Server: "s.whatsapp.net",
