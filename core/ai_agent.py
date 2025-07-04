@@ -19,6 +19,22 @@ class AgentState(TypedDict):
     chat_id: str
     timestamp: str
 
+# Mapping phone numbers to friendly names
+PHONEBOOK = {
+    "917483531255": "Kethan (founder)",
+    "916360751048": "Keerthi",
+    "917022618850": "Kulsum",
+    "919945734815": "Divya"
+}
+
+BOT_PERSONA_INFO = (
+    f"Your name is {settings.bot_name}. You were set up and are maintained by Kethan, "
+    "who is your creator and owner. Address Kethan respectfully as 'Kethan'. "
+    "You also know these phone-number mappings: "
+    "917483531255 → Kethan (founder), 916360751048 → Keerthi, 917022618850 → Kulsum, 919945734815 → Divya. "
+    "Use the mapped names instead of raw numbers when you reply."
+)
+
 class WhatsAppAIAgent:
     """Main AI Agent powered by Gemini via LangChain"""
     
@@ -56,6 +72,10 @@ class WhatsAppAIAgent:
                 include_thoughts=False
             )
             self.use_direct_api = True
+                
+            # Per-chat history (simple in-memory) for short-term context
+            self.chat_histories: Dict[str, list[tuple[str, str]]] = {}
+            self.max_history = 5  # remember last 5 exchanges
                 
             logger.info(f"🧠 AI Agent initialized with model: {settings.agent_model}")
         except Exception as e:
@@ -173,25 +193,103 @@ class WhatsAppAIAgent:
         return workflow
     
     def process_message(self, query: str, sender: str, chat_id: str) -> str:
-        """Process incoming message and generate response"""
+        """Process incoming message and generate response with short context"""
         
-        initial_state = AgentState(
-            query=query,
-            context={"intent": None},
-            response="",
-            sender=sender,
-            chat_id=chat_id,
-            timestamp=datetime.now().isoformat()
-        )
+        lower_q = query.lower().strip()
+
+        # Quick custom Q&A
+        custom_answers = {
+            "what is your name": f"I'm {settings.bot_name}.",
+            "who are you": f"I'm {settings.bot_name}, your AI assistant.",
+            "who created you": "I was set up and maintained by Kethan using Google's Gemini model.",
+            "who is your founder": "Kethan is my founder and caretaker.",
+            "who is kethan": "Kethan is the creator of this bot and the owner of this WhatsApp setup.",
+            "who is kethan vr": "Kethan VR is my founder and the one running this system.",
+            "who is keerthi": "Keerthi is a friend of Kethan.",
+            "who is kulsum": "Kulsum is a friend of Kethan.",
+            "who is divya": "Divya is a friend of Kethan."
+        }
+
+        for key, val in custom_answers.items():
+            if key in lower_q:
+                # Update history before returning
+                history = self.chat_histories.get(chat_id, [])
+                history.append((query, val))
+                self.chat_histories[chat_id] = history[-self.max_history:]
+                return val
+
+        # If user asks about previous question
+        if any(phrase in lower_q for phrase in ["what did i ask", "previous question", "previous answer"]):
+            history = self.chat_histories.get(chat_id, [])
+            if history:
+                last_q, last_a = history[-1]
+                summary = f"You previously asked: '{last_q}'."
+            else:
+                summary = "I don't have any previous question from you in this chat yet."
+            # Add to history
+            hist = self.chat_histories.get(chat_id, [])
+            hist.append((query, summary))
+            self.chat_histories[chat_id] = hist[-self.max_history:]
+            return summary
         
+        # Resolve friendly name if available
+        normalized_sender = sender.lstrip("+").split("@")[0]
+        friendly_name = PHONEBOOK.get(normalized_sender, sender)
+        
+        # Build short conversation context
+        history = self.chat_histories.get(chat_id, [])
+        history_lines = "\n".join([f"{friendly_name}: {q}\n{settings.bot_name}: {r}" for q, r in history[-self.max_history:]])
+        if history_lines:
+            history_lines = f"Previous conversation (most recent last):\n{history_lines}\n---\n"
+        
+        system_prompt = f"""
+        {BOT_PERSONA_INFO}
+        {history_lines}
+        Guidelines:
+        - Keep responses concise (≤ {settings.max_response_length} chars) and friendly.
+        - Address the user by their mapped name if available.
+        - If asked what they previously asked, summarize last user message.
+        - If you don't know an answer, say so briefly.
+        """
+        
+        messages = [
+            SystemMessage(content=system_prompt.strip()),
+            HumanMessage(content=query)
+        ]
         try:
-            # Run the LangGraph workflow
-            result = self.app.invoke(initial_state)
-            return result["response"]
-            
+            logger.info(f"🤖 Generating response for {friendly_name}...")
+            # Prefer LangChain call first
+            response = self.llm.invoke(messages)
+            final_resp = response.content.strip() if response and response.content else ""
+            if not final_resp:
+                raise ValueError("Empty response")
         except Exception as e:
-            logger.error(f"Message processing failed: {e}")
-            return "I apologize, but I encountered an error while processing your message. Please try again."
+            logger.warning(f"LangChain failed ({e}); falling back to direct GenAI API")
+            try:
+                generation_config = genai.types.GenerationConfig(
+                    temperature=settings.agent_temperature,
+                    max_output_tokens=settings.max_response_length,
+                    candidate_count=1,
+                    top_p=0.9,
+                    top_k=40,
+                    response_mime_type="text/plain"
+                )
+                direct_response = self.direct_model.generate_content(system_prompt.strip() + "\nUser: " + query, generation_config=generation_config)
+                final_resp = direct_response.text.strip() if hasattr(direct_response, 'text') else ""
+            except Exception as e2:
+                logger.error(f"Direct GenAI API failed: {e2}")
+                final_resp = "Sorry, I'm having trouble right now."
+
+        if not final_resp:
+            final_resp = "Sorry, I'm having trouble right now."
+
+        # Update chat history
+        history.append((query, final_resp))
+        if len(history) > self.max_history:
+            history = history[-self.max_history:]
+        self.chat_histories[chat_id] = history
+
+        return final_resp
     
     def get_simple_response(self, query: str, sender: str = "User") -> str:
         """Simple response generation for testing/debugging"""
