@@ -58,7 +58,7 @@ func NewMessageStore() (*MessageStore, error) {
 	}
 
 	// Open SQLite database for messages
-	db, err := sql.Open("sqlite3", "file:data/messages.db?_foreign_keys=on")
+	db, err := sql.Open("sqlite3", "file:data/messages.db?_foreign_keys=on&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
@@ -911,7 +911,7 @@ func main() {
 	logger.Infof("Starting WhatsApp client...")
 
 	// Create database connection for storing session data
-	dbLog := waLog.Stdout("Database", "INFO", true)
+	dbLog := waLog.Stdout("Database", "DEBUG", true)
 
 	// Create directory for database if it doesn't exist
 	if err := os.MkdirAll("data", 0755); err != nil {
@@ -922,7 +922,7 @@ func main() {
 	// Store WhatsApp session in ./data (inside /app) – this directory is
 	// created and chowned to appuser in the Dockerfile so we have write
 	// permissions even when running as non-root.
-	dbPath := "file:data/whatsapp.db?_foreign_keys=on"
+	dbPath := "file:data/whatsapp.db?_foreign_keys=on&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 	container, err := sqlstore.New("sqlite3", dbPath, dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
