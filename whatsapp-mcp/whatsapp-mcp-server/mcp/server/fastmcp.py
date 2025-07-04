@@ -66,5 +66,5 @@ class FastMCP:  # pragma: no cover – simple runtime shim
         Uvicorn; if *transport* equals "stdio" we still use HTTP so the
         rest of the code works without changes.
         """
-        port = port or int(os.getenv("PORT", "3334"))
+        port = port or 3334  # Always use 3334 for the internal MCP server
         uvicorn.run(self.app, host=host, port=port, log_level="info") 
