@@ -398,4 +398,4 @@ class MessageProcessor:
 message_processor = MessageProcessor()
 
 # Constant indicating whether the enhanced orchestrator with sub-agents is available
-ENHANCED_ORCHESTRATOR_AVAILABLE = bool(message_processor.use_orchestrator) 
+ENHANCED_ORCHESTRATOR_AVAILABLE = bool(message_processor.use_orchestrator)

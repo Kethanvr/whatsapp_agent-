@@ -1,9 +1,3 @@
-# Core LangChain packages (compatible versions)
-langchain>=0.1.20
-langgraph>=0.0.65
-langchain-google-genai>=1.0.0
-langchain-community>=0.0.38
-
 # HTTP and API clients
 requests>=2.31.0
 fastapi>=0.104.1
@@ -24,4 +18,4 @@ loguru>=0.7.2
 asyncio-mqtt>=0.16.1
 
 # Google Gemini SDK with Search-as-a-Tool support
-google-generativeai>=0.5.0  # Provides Tool & GoogleSearch classes 
+google-generativeai>=0.5.0  # Provides Tool & GoogleSearch classes

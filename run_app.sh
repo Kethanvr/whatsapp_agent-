@@ -32,4 +32,4 @@ echo "🤖 Starting Python AI Bot..."
 python enhanced_instant_bot.py
 
 # Call cleanup when the script finishes
-cleanup 
+cleanup
