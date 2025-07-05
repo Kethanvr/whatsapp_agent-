@@ -1,3 +1,11 @@
+# Core LangChain packages (compatible versions)
+langchain>=0.3.0
+langgraph>=0.2.0
+langchain-google-genai>=2.0.0
+langchain-community>=0.3.0
+langchain-core>=0.3.0
+langsmith>=0.1.0
+
 # HTTP and API clients
 requests>=2.31.0
 fastapi>=0.104.1
@@ -12,10 +20,14 @@ streamlit-autorefresh>=0.0.1
 python-dotenv>=1.0.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
+typing-extensions>=4.12.0
 
 # Logging and async
 loguru>=0.7.2
 asyncio-mqtt>=0.16.1
 
-# Google Gemini SDK with Search-as-a-Tool support
-google-generativeai>=0.5.0  # Provides Tool & GoogleSearch classes
+# AI/ML dependencies
+google-generativeai>=0.8.3
+Pillow>=10.0.0
+aiohttp>=3.8.0
+serpapi>=0.1.0

@@ -7,9 +7,11 @@ Powered by Gemini + LangChain + LangGraph + WhatsApp-MCP
 import os
 import sys
 import signal
+import argparse
 from loguru import logger
 from core.message_processor import message_processor
 from config.settings import settings
+import threading
 
 def setup_logging():
     """Configure clean, structured logging with loguru"""
@@ -62,8 +64,8 @@ def check_environment():
         issues.append("❌ GEMINI_API_KEY not configured in .env file")
     
     # Check MCP server URL format
-    if not settings.mcp_server_url.startswith(('http://', 'https://')):
-        issues.append("❌ MCP_SERVER_URL must start with http:// or https://")
+    if not settings.bridge_server_url.startswith(('http://', 'https://')):
+        issues.append("❌ BRIDGE_SERVER_URL must start with http:// or https://")
     
     # Create logs directory
     os.makedirs("logs", exist_ok=True)
@@ -87,7 +89,7 @@ def display_startup_info():
     logger.info("⚙️  System Configuration:")
     logger.info(f"   • Bot Name: {settings.bot_name}")
     logger.info(f"   • Agent Model: {settings.agent_model}")
-    logger.info(f"   • MCP Server: {settings.mcp_server_url}")
+    logger.info(f"   • WhatsApp Bridge: {settings.bridge_server_url}")
     logger.info(f"   • Poll Interval: {settings.mcp_poll_interval}s")
     logger.info("")
     
@@ -136,47 +138,43 @@ def display_status_update(message: str, status: str = "INFO"):
 
 def main():
     """Main application entry point"""
-    # Setup logging
-    setup_logging()
-    
-    # Display startup info
-    display_startup_info()
-    
-    # Check environment
-    if not check_environment():
-        display_status_update("Environment configuration failed", "ERROR")
-        sys.exit(1)
-    
-    display_status_update("Environment configuration valid", "SUCCESS")
-    
-    # Setup signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    display_status_update("Signal handlers configured", "SUCCESS")
-    
-    try:
-        # Initialize multi-agent system
-        display_status_update("Initializing multi-agent orchestrator...", "LOADING")
-        
-        # Start the message processor
-        display_status_update("Starting message processor...", "LOADING")
-        success = message_processor.start_polling()
-        
-        if not success:
-            display_status_update("Message processor failed to start", "ERROR")
-            sys.exit(1)
-        
-        display_status_update("System is now ready and processing messages!", "SUCCESS")
-            
-    except KeyboardInterrupt:
-        logger.info("")
-        display_status_update("Shutdown requested by user", "INFO")
-    except Exception as e:
-        display_status_update(f"Unexpected error: {e}", "ERROR")
-        sys.exit(1)
-    finally:
-        display_status_update("WhatsApp AI Assistant stopped", "INFO")
-        logger.info("")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=int(os.environ.get('MAIN_PORT', 8503)), help='Port to bind HTTP server')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind HTTP server')
+    args = parser.parse_args()
+
+    # ------------------------------------------------------------------
+    # Start the message processor (polling loop) in a separate thread
+    # ------------------------------------------------------------------
+    def _run_message_processor():  # noqa: WPS430
+        try:
+            message_processor.start_polling()
+        except Exception as exc:  # pragma: no cover – keep server alive
+            logger.error("Message processor crashed: {}", exc)
+
+    threading.Thread(target=_run_message_processor, daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # Minimal FastAPI app for health and simple info endpoints
+    # ------------------------------------------------------------------
+    from fastapi import FastAPI
+    import uvicorn
+
+    app = FastAPI()
+
+    @app.get("/health")
+    async def health():  # noqa: D401
+        """Basic liveness probe used by Docker/Render."""
+        return {"status": "ok"}
+
+    @app.get("/stats")
+    async def stats():  # noqa: D401
+        """Expose current message-processor stats for debugging."""
+        from core.message_processor import message_processor  # local import to avoid cycles
+
+        return message_processor.get_stats()
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 if __name__ == "__main__":
     main() 

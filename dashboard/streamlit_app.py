@@ -1226,6 +1226,7 @@ def show_logs():
         "Triggers": ", ".join(settings.trigger_list),
         "Group Chats Enabled": settings.enable_group_chats,
         "Personal Chats Enabled": settings.enable_personal_chats,
+        "WhatsApp Bridge URL": settings.bridge_server_url,
     }
     
     for key, value in config_data.items():

@@ -33,6 +33,9 @@ class WhatsAppMCPClient:
     """Client for communicating with whatsapp-mcp server"""
     
     def __init__(self, base_url: str = None):
+        # Prefer the explicit *base_url* argument; otherwise use the bridge
+        # server URL from settings.  The old *mcp_server_url* value is kept as
+        # a fallback for full backward-compatibility.
         self.base_url = base_url or settings.bridge_server_url
         self.session = requests.Session()
         self._last_message_ids = {}  # Track last seen message per chat

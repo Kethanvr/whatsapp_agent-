@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"math"
 	"math/rand"
 	"net/http"
@@ -17,11 +19,13 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
-	_ "modernc.org/sqlite"
+	"github.com/rs/zerolog/log"
 
 	"bytes"
 
+	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -49,12 +53,12 @@ type MessageStore struct {
 // Initialize message store
 func NewMessageStore() (*MessageStore, error) {
 	// Create directory for database if it doesn't exist
-	if err := os.MkdirAll("store", 0755); err != nil {
+	if err := os.MkdirAll("data", 0755); err != nil {
 		return nil, fmt.Errorf("failed to create store directory: %v", err)
 	}
 
-	// Open SQLite database for messages with WAL mode enabled for better concurrency
-	db, err := sql.Open("sqlite", "file:store/messages.db?_foreign_keys=on&_pragma=journal_mode(WAL)")
+	// Open SQLite database for messages
+	db, err := sql.Open("sqlite3", "file:data/messages.db?_foreign_keys=on&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
@@ -562,7 +566,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	var err error
 
 	// First, check if we already have this file
-	chatDir := fmt.Sprintf("store/%s", strings.ReplaceAll(chatJID, ":", "_"))
+	chatDir := fmt.Sprintf("data/%s", strings.ReplaceAll(chatJID, ":", "_"))
 	localPath := ""
 
 	// Get media info from the database
@@ -676,16 +680,12 @@ func extractDirectPathFromURL(url string) string {
 }
 
 // Start a REST API server to expose the WhatsApp client functionality
-func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
-	// Health check endpoint
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
+func registerRESTEndpoints(mux *http.ServeMux, client *whatsmeow.Client, messageStore *MessageStore) {
+	// NOTE: Do NOT register /health here – it is already added by the QR server
+	// setup code below. Multiple registrations on the same path cause a panic.
 
 	// Get all chats endpoint
-	http.HandleFunc("/chats", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/chats", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -724,7 +724,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Get messages from specific chat endpoint
-	http.HandleFunc("/messages/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/messages/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -771,7 +771,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Send message endpoint (compatible with our AI assistant)
-	http.HandleFunc("/send_message", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/send_message", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -808,7 +808,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Handler for sending messages (original endpoint)
-	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -854,7 +854,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Handler for downloading media
-	http.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -903,17 +903,6 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			Path:     path,
 		})
 	})
-
-	// Start the server
-	serverAddr := fmt.Sprintf(":%d", port)
-	fmt.Printf("Starting REST API server on %s...\n", serverAddr)
-
-	// Run server in a goroutine so it doesn't block
-	go func() {
-		if err := http.ListenAndServe(serverAddr, nil); err != nil {
-			fmt.Printf("REST API server error: %v\n", err)
-		}
-	}()
 }
 
 func main() {
@@ -922,16 +911,19 @@ func main() {
 	logger.Infof("Starting WhatsApp client...")
 
 	// Create database connection for storing session data
-	dbLog := waLog.Stdout("Database", "WARN", true)
+	dbLog := waLog.Stdout("Database", "DEBUG", true)
 
 	// Create directory for database if it doesn't exist
-	if err := os.MkdirAll("store", 0755); err != nil {
+	if err := os.MkdirAll("data", 0755); err != nil {
 		logger.Errorf("Failed to create store directory: %v", err)
 		return
 	}
 
-	// Enable WAL mode and a busy timeout to prevent database lock errors
-	container, err := sqlstore.New("sqlite", "file:store/whatsapp.db?_pragma=foreign_keys(on)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbLog)
+	// Store WhatsApp session in ./data (inside /app) – this directory is
+	// created and chowned to appuser in the Dockerfile so we have write
+	// permissions even when running as non-root.
+	dbPath := "file:data/whatsapp.db?_foreign_keys=on&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	container, err := sqlstore.New("sqlite3", dbPath, dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
 		return
@@ -973,19 +965,85 @@ func main() {
 			handleMessage(client, messageStore, v, logger)
 
 		case *events.HistorySync:
-			// Process history sync events
-			handleHistorySync(client, messageStore, v, logger)
+			// Ignore history sync to avoid loading large amounts of old messages
+			logger.Infof("Skipping HistorySync event (size: %d conversations)", len(v.Data.Conversations))
 
 		case *events.Connected:
 			logger.Infof("Connected to WhatsApp")
 
 		case *events.LoggedOut:
-			logger.Warnf("Device logged out, please scan QR code to log in again")
+			// WhatsApp logged the session out (e.g. multi-device limit, network
+			// hiccup).  Attempt a transparent reconnect so the user does not
+			// have to re-deploy or restart the whole container.  A full
+			// re-pair (QR scan) is only needed if WhatsApp has explicitly
+			// invalidated the device – in that case Connect() will still
+			// return an error and we will log it.
+
+			logger.Warnf("Logged out event received – trying to reconnect in 30 s …")
+
+			go func() {
+				time.Sleep(30 * time.Second)
+				if err := client.Connect(); err != nil {
+					logger.Errorf("Reconnect attempt failed: %v", err)
+				} else {
+					logger.Infof("Reconnected successfully after LoggedOut event")
+				}
+			}()
+
+		case *events.Disconnected:
+			// Network drop – WhatsMeow will emit Disconnected.  Retry with an
+			// exponential back-off (simple version here).
+
+			logger.Warnf("Disconnected from WhatsApp – attempting automatic reconnect …")
+
+			go func() {
+				backoff := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second}
+				for i, d := range backoff {
+					time.Sleep(d)
+					if err := client.Connect(); err != nil {
+						logger.Errorf("Reconnect try %d failed: %v", i+1, err)
+						continue
+					}
+					logger.Infof("Reconnected on attempt %d", i+1)
+					return
+				}
+				logger.Errorf("All reconnect attempts failed – manual intervention required (scan QR again)")
+			}()
 		}
 	})
 
-	// Create channel to track connection success
-	connected := make(chan bool, 1)
+	// ------------------------------------------------------------------
+	// Start HTTP server (QR + REST) on Render's $PORT
+	// ------------------------------------------------------------------
+	go func() {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
+		mux := http.NewServeMux()
+		// QR + health routes
+		mux.HandleFunc("/qr", func(w http.ResponseWriter, r *http.Request) {
+			f, err := os.Open("qr.png")
+			if err != nil {
+				http.Error(w, "QR code not found", http.StatusNotFound)
+				return
+			}
+			defer f.Close()
+			w.Header().Set("Content-Type", "image/png")
+			io.Copy(w, f)
+		})
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+		})
+
+		// Register the REST endpoints on the *same* mux so they are exposed
+		// via Render's single allowed port.
+		registerRESTEndpoints(mux, client, messageStore)
+
+		log.Printf("Server (QR + REST) listening on :%s", port)
+		http.ListenAndServe(":"+port, mux)
+	}()
 
 	// Connect to WhatsApp
 	if client.Store.ID == nil {
@@ -1002,16 +1060,18 @@ func main() {
 			if evt.Event == "code" {
 				fmt.Println("\nScan this QR code with your WhatsApp app:")
 				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				// Save QR as PNG
+				err := qrcode.WriteFile(evt.Code, qrcode.Medium, 256, "qr.png")
+				if err != nil {
+					logger.Errorf("Failed to save QR code PNG: %v", err)
+				}
 			} else if evt.Event == "success" {
-				connected <- true
 				break
 			}
 		}
 
 		// Wait for connection
 		select {
-		case <-connected:
-			fmt.Println("\nSuccessfully connected and authenticated!")
 		case <-time.After(3 * time.Minute):
 			logger.Errorf("Timeout waiting for QR code scan")
 			return
@@ -1023,7 +1083,6 @@ func main() {
 			logger.Errorf("Failed to connect: %v", err)
 			return
 		}
-		connected <- true
 	}
 
 	// Wait a moment for connection to stabilize
@@ -1036,14 +1095,13 @@ func main() {
 
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
-	// Start REST API server (changed port to 3334 to avoid conflicts)
-	startRESTServer(client, messageStore, 3334)
-
-	// Create a channel to keep the main goroutine alive
+	// ------------------------------------------------------------------
+	// Keep main goroutine alive until SIGINT/SIGTERM
+	// ------------------------------------------------------------------
 	exitChan := make(chan os.Signal, 1)
 	signal.Notify(exitChan, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Println("REST server is running. Press Ctrl+C to disconnect and exit.")
+	fmt.Println("Server is running. Press Ctrl+C to disconnect and exit.")
 
 	// Wait for termination signal
 	<-exitChan
@@ -1134,184 +1192,6 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 	}
 
 	return name
-}
-
-// Handle history sync events
-func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, historySync *events.HistorySync, logger waLog.Logger) {
-	fmt.Printf("Received history sync event with %d conversations\n", len(historySync.Data.Conversations))
-
-	syncedCount := 0
-	for _, conversation := range historySync.Data.Conversations {
-		// Parse JID from the conversation
-		if conversation.ID == nil {
-			continue
-		}
-
-		chatJID := *conversation.ID
-
-		// Try to parse the JID
-		jid, err := types.ParseJID(chatJID)
-		if err != nil {
-			logger.Warnf("Failed to parse JID %s: %v", chatJID, err)
-			continue
-		}
-
-		// Get appropriate chat name by passing the history sync conversation directly
-		name := GetChatName(client, messageStore, jid, chatJID, conversation, "", logger)
-
-		// Process messages
-		messages := conversation.Messages
-		if len(messages) > 0 {
-			// Update chat with latest message timestamp
-			latestMsg := messages[0]
-			if latestMsg == nil || latestMsg.Message == nil {
-				continue
-			}
-
-			// Get timestamp from message info
-			timestamp := time.Time{}
-			if ts := latestMsg.Message.GetMessageTimestamp(); ts != 0 {
-				timestamp = time.Unix(int64(ts), 0)
-			} else {
-				continue
-			}
-
-			messageStore.StoreChat(chatJID, name, timestamp)
-
-			// Store messages
-			for _, msg := range messages {
-				if msg == nil || msg.Message == nil {
-					continue
-				}
-
-				// Extract text content
-				var content string
-				if msg.Message.Message != nil {
-					if conv := msg.Message.Message.GetConversation(); conv != "" {
-						content = conv
-					} else if ext := msg.Message.Message.GetExtendedTextMessage(); ext != nil {
-						content = ext.GetText()
-					}
-				}
-
-				// Extract media info
-				var mediaType, filename, url string
-				var mediaKey, fileSHA256, fileEncSHA256 []byte
-				var fileLength uint64
-
-				if msg.Message.Message != nil {
-					mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength = extractMediaInfo(msg.Message.Message)
-				}
-
-				// Log the message content for debugging
-				logger.Infof("Message content: %v, Media Type: %v", content, mediaType)
-
-				// Skip messages with no content and no media
-				if content == "" && mediaType == "" {
-					continue
-				}
-
-				// Determine sender
-				var sender string
-				isFromMe := false
-				if msg.Message.Key != nil {
-					if msg.Message.Key.FromMe != nil {
-						isFromMe = *msg.Message.Key.FromMe
-					}
-					if !isFromMe && msg.Message.Key.Participant != nil && *msg.Message.Key.Participant != "" {
-						sender = *msg.Message.Key.Participant
-					} else if isFromMe {
-						sender = client.Store.ID.User
-					} else {
-						sender = jid.User
-					}
-				} else {
-					sender = jid.User
-				}
-
-				// Store message
-				msgID := ""
-				if msg.Message.Key != nil && msg.Message.Key.ID != nil {
-					msgID = *msg.Message.Key.ID
-				}
-
-				// Get message timestamp
-				timestamp := time.Time{}
-				if ts := msg.Message.GetMessageTimestamp(); ts != 0 {
-					timestamp = time.Unix(int64(ts), 0)
-				} else {
-					continue
-				}
-
-				err = messageStore.StoreMessage(
-					msgID,
-					chatJID,
-					sender,
-					content,
-					timestamp,
-					isFromMe,
-					mediaType,
-					filename,
-					url,
-					mediaKey,
-					fileSHA256,
-					fileEncSHA256,
-					fileLength,
-				)
-				if err != nil {
-					logger.Warnf("Failed to store history message: %v", err)
-				} else {
-					syncedCount++
-					// Log successful message storage
-					if mediaType != "" {
-						logger.Infof("Stored message: [%s] %s -> %s: [%s: %s] %s",
-							timestamp.Format("2006-01-02 15:04:05"), sender, chatJID, mediaType, filename, content)
-					} else {
-						logger.Infof("Stored message: [%s] %s -> %s: %s",
-							timestamp.Format("2006-01-02 15:04:05"), sender, chatJID, content)
-					}
-				}
-			}
-		}
-	}
-
-	fmt.Printf("History sync complete. Stored %d messages.\n", syncedCount)
-}
-
-// Request history sync from the server
-func requestHistorySync(client *whatsmeow.Client) {
-	if client == nil {
-		fmt.Println("Client is not initialized. Cannot request history sync.")
-			return
-		}
-
-	if !client.IsConnected() {
-		fmt.Println("Client is not connected. Please ensure you are connected to WhatsApp first.")
-			return
-		}
-
-	if client.Store.ID == nil {
-		fmt.Println("Client is not logged in. Please scan the QR code first.")
-		return
-	}
-
-	// Build and send a history sync request
-	historyMsg := client.BuildHistorySyncRequest(nil, 100)
-	if historyMsg == nil {
-		fmt.Println("Failed to build history sync request.")
-			return
-		}
-
-	_, err := client.SendMessage(context.Background(), types.JID{
-		Server: "s.whatsapp.net",
-		User:   "status",
-	}, historyMsg)
-
-	if err != nil {
-		fmt.Printf("Failed to request history sync: %v\n", err)
-	} else {
-		fmt.Println("History sync requested. Waiting for server response...")
-	}
 }
 
 // analyzeOggOpus tries to extract duration and generate a simple waveform from an Ogg Opus file

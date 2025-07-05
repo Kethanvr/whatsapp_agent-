@@ -12,8 +12,28 @@ class Settings(BaseSettings):
     # Core API Keys
     gemini_api_key: str = Field(..., env="GEMINI_API_KEY")
     
+    # WhatsApp Bridge (Go) configuration – this is the REST server the agent
+    # talks to for sending/receiving WhatsApp messages.  Keep the old
+    # MCP_SERVER_URL env var for backward-compatibility but prefer the new
+    # BRIDGE_SERVER_URL if provided.
+    # Prefer BRIDGE_SERVER_URL env, otherwise fall back to the internal
+    # localhost URL using the container's $PORT value (Render injects it).
+    bridge_server_url: str = Field(
+        default_factory=lambda: os.getenv("BRIDGE_SERVER_URL")
+        or f"http://localhost:{os.getenv('PORT', '3334')}",
+        env="BRIDGE_SERVER_URL",
+    )
+    
+    # Legacy – keep for backward compatibility (will be removed later).
+    # If MCP_SERVER_URL env var is present we honour it; otherwise we fall back
+    # to the new bridge_server_url so existing references don't break.
+    mcp_server_url: str = Field(
+        default_factory=lambda: os.getenv("MCP_SERVER_URL")
+        or f"http://localhost:{os.getenv('PORT', '3334')}",
+        env="MCP_SERVER_URL",
+    )
+    
     # WhatsApp MCP Configuration
-    bridge_server_url: str = Field(default="http://localhost:3334", env="BRIDGE_SERVER_URL")
     mcp_poll_interval: int = Field(default=3, env="MCP_POLL_INTERVAL")
     
     # Bot Behavior
