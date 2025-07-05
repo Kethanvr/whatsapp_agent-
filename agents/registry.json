@@ -12,7 +12,7 @@
         "reasoning",
         "whatsapp-responses"
       ],
-      "model": "gemini-2.0-flash",
+      "model": "gemini-2.5-flash",
       "temperature": 0.7,
       "max_tokens": 300,
       "enabled": true,
@@ -23,6 +23,15 @@
         "use_bullet_points": true,
         "whatsapp_friendly": true
       }
+    },
+    {
+      "id": "memory-store",
+      "name": "Memory Store Agent",
+      "description": "Stores and retrieves user memories based on requests like 'remember this' or 'recall'.",
+      "capabilities": ["memory-store", "memory-retrieve"],
+      "memory_url": "http://localhost:8090",
+      "enabled": true,
+      "keywords": ["remember", "recall", "memory", "store"]
     }
   ],
   "routing_rules": {
@@ -44,7 +53,8 @@
         "hi",
         "hello",
         "hey"
-      ]
+      ],
+      "memory-store": ["remember", "recall", "memory", "store"]
     }
   },
   "system_config": {

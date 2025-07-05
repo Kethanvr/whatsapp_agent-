@@ -3,7 +3,7 @@ Configuration settings for WhatsApp AI Assistant
 """
 from pydantic_settings import BaseSettings
 from pydantic import Field
-from typing import List
+from typing import List, Optional
 import os
 
 class Settings(BaseSettings):

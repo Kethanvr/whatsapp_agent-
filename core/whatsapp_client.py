@@ -7,6 +7,8 @@ from typing import List, Dict, Optional, Any, Tuple
 from loguru import logger
 from dataclasses import dataclass
 from config.settings import settings
+import aiohttp
+import logging
 
 @dataclass
 class ChatInfo:

@@ -175,7 +175,12 @@ class MessageProcessor:
             
             # Generate AI response using orchestrator or fallback
             ai_start_time = time.time()
-            response = self._generate_response(query, message)
+            # Temporarily bypass orchestrator to use context-aware agent directly
+            response = ai_agent.process_message(
+                query=query,
+                chat_id=message.chat_id,
+                sender=message.sender
+            )
             ai_processing_time = time.time() - ai_start_time
             
             logger.info(f"📱 [STEP 4] ✅ AI response generated in {ai_processing_time:.2f}s")
@@ -399,4 +404,7 @@ class MessageProcessor:
             }
 
 # Global message processor instance
-message_processor = MessageProcessor() 
+message_processor = MessageProcessor()
+
+# Constant indicating whether the enhanced orchestrator with sub-agents is available
+ENHANCED_ORCHESTRATOR_AVAILABLE = bool(message_processor.use_orchestrator)

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -20,10 +21,9 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
+	"github.com/rs/zerolog/log"
 
 	"bytes"
-
-	"io"
 
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
@@ -704,7 +704,7 @@ func registerRESTEndpoints(mux *http.ServeMux, client *whatsmeow.Client, message
 			// Get chat name from database
 			var name string
 			err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", jid).Scan(&name)
-			if err != nil {
+		if err != nil {
 				name = jid // fallback to JID if name not found
 			}
 
@@ -906,8 +906,8 @@ func registerRESTEndpoints(mux *http.ServeMux, client *whatsmeow.Client, message
 }
 
 func main() {
-	// Set up logger
-	logger := waLog.Stdout("Client", "INFO", true)
+	// Set up logger with a WARN level to reduce noise
+	logger := waLog.Stdout("Client", "WARN", true)
 	logger.Infof("Starting WhatsApp client...")
 
 	// Create database connection for storing session data
