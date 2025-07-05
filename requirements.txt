@@ -23,13 +23,5 @@ pydantic-settings>=2.1.0
 loguru>=0.7.2
 asyncio-mqtt>=0.16.1
 
-# === MULTI-AGENT ORCHESTRATION ===
-langchain==0.3.10
-langchain-google-genai==2.0.8
-langgraph==0.2.51
-langchain-core==0.3.25
-langsmith==0.2.15
-
-# === ADDITIONAL UTILITIES ===
-pydantic==2.10.3
-typing-extensions==4.12.2 
+# Google Gemini SDK with Search-as-a-Tool support
+google-generativeai>=0.5.0  # Provides Tool & GoogleSearch classes 
