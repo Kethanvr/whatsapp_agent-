@@ -11,6 +11,29 @@ import google.generativeai as genai
 from config.settings import settings
 from .base_agent import BaseAgent, AgentRequest, AgentResponse
 import logging
+# Removed early static import to allow graceful fallback loading of GoogleSearch
+
+# Backwards-compatibility: if GoogleSearch missing, disable grounding gracefully
+try:
+    from google.generativeai.types import Tool, GoogleSearch  # noqa: F811 re-import for clarity
+except ImportError:  # Older google-generativeai version – fallback without search
+    from google.generativeai.types import Tool  # type: ignore
+
+    class _DisabledSearch:
+        """Stub when GoogleSearch is unavailable"""
+
+        def __init__(self, *args, **kwargs):  # noqa: D401
+            pass
+
+    GoogleSearch = _DisabledSearch  # type: ignore
+    import warnings
+
+    warnings.warn(
+        "google-generativeai package is outdated and lacks GoogleSearch.\n"
+        "Real-time web grounding will be disabled until you upgrade to >=0.5.0.\n"
+        "Run:  pip install --upgrade google-generativeai",
+        RuntimeWarning,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +54,8 @@ class QnAAgent(BaseAgent):
         # Configure Gemini
         genai.configure(api_key=settings.gemini_api_key)
         
-        # Initialize gemini-2.0-flash model without thinking mode
-        model_name = "gemini-2.0-flash"  # Force gemini-2.0-flash
+        # Initialize gemini-2.5-flash model with Google Search capability
+        model_name = self.config.get("model", "gemini-2.5-flash")  # Default to gemini-2.5-flash
         
         # Safety settings to prevent blocks
         safety_settings = [
@@ -62,6 +85,12 @@ class QnAAgent(BaseAgent):
             safety_settings=safety_settings,
             system_instruction=system_instruction
         )
+        
+        # Prepare Google Search tool for grounding with real-time information
+        self.google_search_tool = Tool(google_search=GoogleSearch())
+        
+        # Flag to detect if search tool is actually functional (class name check)
+        self._search_available = getattr(GoogleSearch, '__name__', '') != '_DisabledSearch'
         
         # Agent-specific configuration
         self.temperature = self.config.get("temperature", 0.7)
@@ -111,7 +140,11 @@ Answer:"""
             # Use asyncio to make the synchronous call non-blocking
             response = await asyncio.get_event_loop().run_in_executor(
                 None, 
-                lambda: self._generate_content_safe(prompt, generation_config)
+                lambda: self._generate_content_safe(
+                    prompt,
+                    generation_config,
+                    [self.google_search_tool] if self._search_available else None,
+                )
             )
             
             if response and hasattr(response, 'text') and response.text:
@@ -164,12 +197,13 @@ Answer:"""
                 metadata={"fallback_used": True}
             )
     
-    def _generate_content_safe(self, prompt: str, generation_config):
+    def _generate_content_safe(self, prompt: str, generation_config, tools=None):
         """Safely generate content with proper error handling"""
         try:
             response = self.model.generate_content(
                 prompt,
-                generation_config=generation_config
+                generation_config=generation_config,
+                tools=tools if tools else None
             )
             
             # Check for safety blocks
