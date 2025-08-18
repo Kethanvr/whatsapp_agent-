@@ -1,7 +1,6 @@
 # 🤖 WhatsApp AI Assistant
 
 A sophisticated **multi-agent orchestration system** that connects your personal WhatsApp with specialized AI agents powered by Google Gemini 2.0 Flash. Features intelligent routing, trigger-based responses, and a comprehensive dashboard.
-
 ## 🎯 Features
 
 - **🧠 Multi-Agent System**: Intelligent routing to specialized AI agents
